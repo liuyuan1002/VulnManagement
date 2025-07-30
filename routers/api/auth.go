@@ -7,6 +7,7 @@ import (
 	"net/http" // 导入HTTP包，用于HTTP状态码
 	"strings"
 	"vulnmain/services" // 导入服务层包，使用认证服务
+	"vulnmain/utils"    // 导入工具包，用于密码验证
 
 	"github.com/gin-gonic/gin" // 导入Gin框架，用于HTTP路由处理
 )
@@ -327,4 +328,34 @@ func isValidImageType(contentType string) bool {
 		}
 	}
 	return false
+}
+
+// GetPasswordPolicy 获取密码策略
+func GetPasswordPolicy(c *gin.Context) {
+	policy, err := utils.GetPasswordPolicy()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code": 500,
+			"msg":  "获取密码策略失败",
+		})
+		return
+	}
+
+	requirements, err := utils.GetPasswordRequirements()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code": 500,
+			"msg":  "获取密码要求失败",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"msg":  "获取成功",
+		"data": gin.H{
+			"policy":       policy,
+			"requirements": requirements,
+		},
+	})
 }

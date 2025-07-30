@@ -2,15 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { 
-  Card, 
-  Typography, 
-  Button, 
-  Space, 
-  Tag, 
-  Tabs, 
-  Table, 
-  Badge, 
+import {
+  Card,
+  Typography,
+  Button,
+  Space,
+  Tag,
+  Tabs,
+  Table,
+  Badge,
   Empty,
   Spin,
   Modal,
@@ -20,13 +20,16 @@ import {
   DatePicker,
   Toast,
   Popconfirm,
-  TextArea
+  TextArea,
+  Upload,
+  List
 } from '@douyinfe/semi-ui';
 import MarkdownEditor from '@/components/MarkdownEditor';
 import MarkdownViewer from '@/components/MarkdownViewer';
-import { 
-  IconArrowLeft, 
-  IconBolt, 
+
+import {
+  IconArrowLeft,
+  IconBolt,
   IconServer,
   IconEdit,
   IconDelete,
@@ -34,7 +37,10 @@ import {
   IconUser,
   IconCalendar,
   IconRefresh,
-  IconEyeOpened
+  IconEyeOpened,
+  IconInfoCircle,
+  IconDownload,
+  IconUpload
 } from '@douyinfe/semi-icons';
 import { 
   projectApi, 
@@ -92,6 +98,16 @@ export default function ProjectDetailPage() {
   const [assetLoading, setAssetLoading] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
   const [assetFormRef, setAssetFormRef] = useState<any>(null);
+  const [selectedAssetType, setSelectedAssetType] = useState<string>('');
+
+  // 资产导出相关状态
+  const [selectedAssetIds, setSelectedAssetIds] = useState<number[]>([]);
+  const [exporting, setExporting] = useState(false);
+
+  // 资产导入相关状态
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
   
   // 用户列表（用于指派）
   const [devEngineers, setDevEngineers] = useState<User[]>([]);
@@ -106,6 +122,12 @@ export default function ProjectDetailPage() {
   const isAdmin = currentUser?.role_id === 1;
   const isSecurityEngineer = currentUser?.role_id === 2;
   const isDevEngineer = currentUser?.role_id === 3;
+
+  // 项目过期检查
+  const isProjectExpired = (project: Project) => {
+    if (!project.end_date) return false;
+    return new Date(project.end_date) < new Date();
+  };
 
   useEffect(() => {
     // 在客户端获取当前用户信息
@@ -173,6 +195,47 @@ export default function ProjectDetailPage() {
       }, 150); // 增加延迟时间以确保动态表单字段已渲染
     }
   }, [editingVuln, vulnFormRef, vulnModalVisible, isDevEngineer]);
+
+  // 监听 editingAsset 变化，自动填充资产表单
+  useEffect(() => {
+    if (editingAsset && assetFormRef && assetModalVisible) {
+      // 检查是否是自定义类型
+      const isCustomType = !ASSET_TYPES.some(type => type.value === editingAsset.type);
+
+      const formValues = {
+        name: editingAsset.name || '',
+        type: isCustomType ? 'custom' : editingAsset.type || '',
+        customType: isCustomType ? editingAsset.type : '',
+        domain: editingAsset.domain || '',
+        ip: editingAsset.ip || '',
+        port: editingAsset.port || '',
+        os: editingAsset.os || '',
+        owner: editingAsset.owner || '',
+        environment: editingAsset.environment || '',
+        department: editingAsset.department || '',
+        importance: editingAsset.importance || '',
+        tags: editingAsset.tags || '',
+        description: editingAsset.description || '',
+      };
+
+      // 延迟设置表单值，确保表单完全渲染
+      setTimeout(() => {
+        try {
+          assetFormRef.setValues(formValues);
+        } catch (error) {
+          console.error('Failed to set asset form values:', error);
+          // 如果第一次失败，再尝试一次
+          setTimeout(() => {
+            try {
+              assetFormRef.setValues(formValues);
+            } catch (retryError) {
+              console.error('Failed to set asset form values on retry:', retryError);
+            }
+          }, 200);
+        }
+      }, 150);
+    }
+  }, [editingAsset, assetFormRef, assetModalVisible]);
 
   // 加载项目详情
   const loadProjectDetail = async () => {
@@ -402,6 +465,7 @@ export default function ProjectDetailPage() {
   // 资产相关操作
   const handleCreateAsset = () => {
     setEditingAsset(null);
+    setSelectedAssetType('');
     if (assetFormRef) {
       assetFormRef.reset();
     }
@@ -410,33 +474,24 @@ export default function ProjectDetailPage() {
 
   const handleEditAsset = (asset: Asset) => {
     setEditingAsset(asset);
+    // 检查是否是自定义类型
+    const isCustomType = !ASSET_TYPES.some(type => type.value === asset.type);
+    setSelectedAssetType(isCustomType ? 'custom' : asset.type);
     setAssetModalVisible(true);
-    setTimeout(() => {
-      if (assetFormRef) {
-        assetFormRef.setValues({
-          name: asset.name,
-          type: asset.type,
-          domain: asset.domain,
-          ip: asset.ip,
-          port: asset.port,
-          os: asset.os,
-          owner: asset.owner,
-          environment: asset.environment,
-          department: asset.department,
-          importance: asset.importance,
-          tags: asset.tags,
-          description: asset.description,
-        });
-      }
-    }, 200);
+    // 表单值设置由 useEffect 处理
   };
 
   const handleSaveAsset = async (values: any) => {
     try {
-      
+      // 处理自定义资产类型
+      let assetType = values.type;
+      if (values.type === 'custom' && values.customType) {
+        assetType = values.customType;
+      }
+
       const assetData: AssetCreateRequest | AssetUpdateRequest = {
         name: values.name,
-        type: values.type,
+        type: assetType,
         domain: values.domain,
         ip: values.ip,
         port: values.port,
@@ -458,7 +513,8 @@ export default function ProjectDetailPage() {
       // 立即关闭弹窗并重置状态
       setAssetModalVisible(false);
       setEditingAsset(null);
-      
+      setSelectedAssetType('');
+
       // 重置表单
       if (assetFormRef) {
         assetFormRef.reset();
@@ -486,9 +542,129 @@ export default function ProjectDetailPage() {
       await assetApi.deleteAsset(asset.id);
       Toast.success('删除资产成功');
       loadAssets();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting asset:', error);
-      Toast.error('删除资产失败');
+
+      // 检查是否是特定的错误响应
+      if (error.response?.data?.code === 400 &&
+          error.response?.data?.msg === "该资产下存在漏洞，无法删除") {
+        Toast.error('该资产下存在漏洞，无法删除');
+      } else {
+        // 其他错误情况
+        const errorMsg = error.response?.data?.msg || error.message || '删除资产失败';
+        Toast.error(errorMsg);
+      }
+    }
+  };
+
+  // 处理批量导入
+  const handleImportAssets = () => {
+    setImportModalVisible(true);
+    setUploadFile(null);
+  };
+
+  // 处理文件选择（现在使用原生input，这个函数可能不再需要）
+  const handleFileChange = (fileList: any[]) => {
+    console.log('onChange 文件列表变化:', fileList); // 调试日志
+    // 现在使用原生input，这个函数主要用于调试
+  };
+
+  // 执行导入
+  const handleConfirmImport = async () => {
+    console.log('开始导入，当前文件状态:', uploadFile); // 调试日志
+    console.log('文件是否存在:', !!uploadFile); // 调试日志
+
+    if (!uploadFile) {
+      console.error('uploadFile 为空，无法导入'); // 调试日志
+      Toast.error('请选择要导入的Excel文件');
+      return;
+    }
+
+    // 验证文件类型
+    const fileName = uploadFile.name || '';
+    if (!fileName.toLowerCase().endsWith('.xlsx') && !fileName.toLowerCase().endsWith('.xls')) {
+      Toast.error('请选择Excel文件（.xlsx或.xls格式）');
+      return;
+    }
+
+    console.log('文件验证通过，准备上传:', {
+      name: uploadFile.name,
+      size: uploadFile.size,
+      type: uploadFile.type,
+      constructor: uploadFile.constructor.name,
+      isFile: uploadFile instanceof File
+    }); // 调试日志
+
+    // 确保我们传递的是真正的File对象
+    if (!(uploadFile instanceof File)) {
+      console.error('uploadFile不是File对象:', uploadFile);
+      Toast.error('文件对象无效，请重新选择文件');
+      return;
+    }
+
+    try {
+      setImporting(true);
+      console.log('调用导入API，项目ID:', projectId); // 调试日志
+      const response = await assetApi.importAssets(uploadFile, parseInt(projectId));
+      console.log('导入API响应:', response); // 调试日志
+
+      if (response.code === 200) {
+        const result = response.data;
+        let message = `导入完成！成功 ${result.success_count} 条`;
+        if (result.failure_count > 0) {
+          message += `，失败 ${result.failure_count} 条`;
+        }
+
+        Toast.success(message);
+
+        // 如果有错误信息，显示详细错误
+        if (result.errors && result.errors.length > 0) {
+          console.log('导入错误详情:', result.errors);
+          // 显示前几个错误信息
+          const errorPreview = result.errors.slice(0, 3).join('; ');
+          if (result.errors.length > 3) {
+            Toast.warning(`部分导入失败: ${errorPreview}... (共${result.errors.length}个错误，详见控制台)`);
+          } else {
+            Toast.warning(`导入错误: ${errorPreview}`);
+          }
+        }
+
+        // 刷新资产列表
+        await loadAssets();
+
+        // 关闭弹窗
+        setImportModalVisible(false);
+        setUploadFile(null);
+      } else {
+        Toast.error(response.msg || '导入失败');
+      }
+    } catch (error: any) {
+      console.error('导入失败:', error);
+      console.error('错误详情:', error.response); // 更详细的错误日志
+      console.error('响应数据:', error.response?.data); // 显示后端返回的具体错误
+      const errorMsg = error.response?.data?.msg || error.message || '导入失败';
+      Toast.error(`导入失败: ${errorMsg}`);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // 下载导入模板
+  const handleDownloadTemplate = async () => {
+    try {
+      const blob = await assetApi.downloadImportTemplate();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'asset_import_template.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      Toast.success('模板下载成功');
+    } catch (error) {
+      console.error('下载模板失败:', error);
+      Toast.error('下载模板失败');
     }
   };
 
@@ -544,6 +720,57 @@ export default function ProjectDetailPage() {
     if (isAdmin) return true;
     if (isSecurityEngineer && asset.created_by === currentUser?.id) return true;
     return false;
+  };
+
+
+
+  // 处理批量导出
+  const handleExportAssets = async () => {
+    if (selectedAssetIds.length === 0) {
+      Toast.warning('请选择要导出的资产');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const blob = await assetApi.exportAssets(selectedAssetIds, parseInt(projectId));
+
+      // 创建下载链接
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `assets_${projectId}_${new Date().getTime()}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      Toast.success('导出成功');
+      setSelectedAssetIds([]); // 清空选择
+    } catch (error: any) {
+      console.error('导出失败:', error);
+      Toast.error(error.response?.data?.msg || '导出失败');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // 处理全选/取消全选
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedAssetIds(assets.map(asset => asset.id));
+    } else {
+      setSelectedAssetIds([]);
+    }
+  };
+
+  // 处理单个选择
+  const handleSelectAsset = (assetId: number, checked: boolean) => {
+    if (checked) {
+      setSelectedAssetIds([...selectedAssetIds, assetId]);
+    } else {
+      setSelectedAssetIds(selectedAssetIds.filter(id => id !== assetId));
+    }
   };
 
   // 漏洞表格列定义
@@ -783,6 +1010,25 @@ export default function ProjectDetailPage() {
   // 资产表格列定义
   const assetColumns = [
     {
+      title: (
+        <input
+          type="checkbox"
+          checked={selectedAssetIds.length === assets.length && assets.length > 0}
+          onChange={(e) => handleSelectAll(e.target.checked)}
+        />
+      ),
+      dataIndex: 'select',
+      key: 'select',
+      width: 50,
+      render: (text: string, record: Asset) => (
+        <input
+          type="checkbox"
+          checked={selectedAssetIds.includes(record.id)}
+          onChange={(e) => handleSelectAsset(record.id, e.target.checked)}
+        />
+      ),
+    },
+    {
       title: '资产名称',
       dataIndex: 'name',
       key: 'name',
@@ -918,8 +1164,70 @@ export default function ProjectDetailPage() {
             刷新
           </Button>
         </div>
+
+        {/* 项目详细信息 */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+          gap: '16px',
+          marginBottom: '16px',
+          padding: '16px',
+          backgroundColor: '#fafafa',
+          borderRadius: '8px'
+        }}>
+          <div>
+            <Text type="secondary" size="small">项目类型：</Text>
+            <div style={{ marginTop: '4px' }}>
+              <Text strong>{PROJECT_TYPES.find(t => t.value === project.type)?.label || project.type}</Text>
+            </div>
+          </div>
+
+          <div>
+            <Text type="secondary" size="small">项目负责人：</Text>
+            <div style={{ marginTop: '4px' }}>
+              <Text strong>{project.owner?.real_name || project.owner?.username || '未设置'}</Text>
+            </div>
+          </div>
+
+          <div>
+            <Text type="secondary" size="small">创建时间：</Text>
+            <div style={{ marginTop: '4px' }}>
+              <Text strong>
+                {project.created_at ? new Date(project.created_at).toLocaleDateString('zh-CN', {
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit'
+                }) : '未知'}
+              </Text>
+            </div>
+          </div>
+
+          <div>
+            <Text type="secondary" size="small">项目到期时间：</Text>
+            <div style={{ marginTop: '4px' }}>
+              <Text strong style={{
+                color: project.end_date && new Date(project.end_date) < new Date() ? '#ff4d4f' : 'inherit'
+              }}>
+                {project.end_date ? new Date(project.end_date).toLocaleDateString('zh-CN', {
+                  year: 'numeric',
+                  month: '2-digit',
+                  day: '2-digit'
+                }) : '永久有效'}
+              </Text>
+              {project.end_date && new Date(project.end_date) < new Date() && (
+                <Tag color="red" size="small" style={{ marginLeft: '8px' }}>已过期</Tag>
+              )}
+            </div>
+          </div>
+        </div>
+
         {project.description && (
-          <Text type="secondary">{project.description}</Text>
+          <div>
+            <Text type="secondary" size="small">项目描述：</Text>
+            <div style={{ marginTop: '8px' }}>
+              <Text>{project.description}</Text>
+            </div>
+          </div>
         )}
       </Card>
 
@@ -947,9 +1255,22 @@ export default function ProjectDetailPage() {
                   type="primary"
                   icon={<IconPlus />}
                   onClick={handleCreateVuln}
+                  disabled={project && isProjectExpired(project)}
                 >
                   添加漏洞
                 </Button>
+              )}
+              {project && isProjectExpired(project) && (
+                <div style={{
+                  marginLeft: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: 'var(--semi-color-danger)',
+                  fontSize: '12px'
+                }}>
+                  <IconInfoCircle style={{ marginRight: '4px' }} />
+                  项目已过期，无法添加漏洞
+                </div>
               )}
             </div>
             <Table
@@ -980,17 +1301,59 @@ export default function ProjectDetailPage() {
             } 
             itemKey="assets"
           >
-              <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-end' }}>
-                {(isAdmin || isSecurityEngineer) && (
-                  <Button
-                    theme="solid"
-                    type="primary"
-                    icon={<IconPlus />}
-                    onClick={handleCreateAsset}
-                  >
-                    添加资产
-                  </Button>
-                )}
+              <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  {selectedAssetIds.length > 0 && (
+                    <Space>
+                      <Text type="secondary">已选择 {selectedAssetIds.length} 项</Text>
+                      <Button
+                        icon={<IconDownload />}
+                        onClick={handleExportAssets}
+                        loading={exporting}
+                        disabled={selectedAssetIds.length === 0}
+                      >
+                        导出选中
+                      </Button>
+                    </Space>
+                  )}
+                </div>
+
+                <div>
+                  <Space>
+                    {(isAdmin || isSecurityEngineer) && (
+                      <>
+                        <Button
+                          icon={<IconUpload />}
+                          onClick={handleImportAssets}
+                          disabled={project && isProjectExpired(project)}
+                        >
+                          批量导入
+                        </Button>
+                        <Button
+                          theme="solid"
+                          type="primary"
+                          icon={<IconPlus />}
+                          onClick={handleCreateAsset}
+                          disabled={project && isProjectExpired(project)}
+                        >
+                          添加资产
+                        </Button>
+                      </>
+                    )}
+                  </Space>
+                  {project && isProjectExpired(project) && (
+                    <div style={{
+                      marginLeft: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      color: 'var(--semi-color-danger)',
+                      fontSize: '12px'
+                    }}>
+                      <IconInfoCircle style={{ marginRight: '4px' }} />
+                      项目已过期，无法添加资产
+                    </div>
+                  )}
+                </div>
               </div>
               <Table
                 columns={assetColumns}
@@ -1181,7 +1544,7 @@ export default function ProjectDetailPage() {
             field="fix_deadline"
             label="修复期限"
             placeholder="请选择修复期限"
-            format="yyyy-MM-dd"
+            type="date"
             disabled={isDevEngineer && !!editingVuln}
           />
           
@@ -1423,6 +1786,7 @@ export default function ProjectDetailPage() {
         onCancel={() => {
           setAssetModalVisible(false);
           setEditingAsset(null);
+          setSelectedAssetType('');
           if (assetFormRef) {
             assetFormRef.reset();
           }
@@ -1454,6 +1818,7 @@ export default function ProjectDetailPage() {
             label="资产类型"
             placeholder="请选择资产类型"
             rules={[{ required: true, message: '请选择资产类型' }]}
+            onChange={(value) => setSelectedAssetType(value)}
           >
             {ASSET_TYPES.map(type => (
               <Select.Option key={type.value} value={type.value}>
@@ -1461,6 +1826,19 @@ export default function ProjectDetailPage() {
               </Select.Option>
             ))}
           </Form.Select>
+
+          {/* 自定义类型输入框 */}
+          {selectedAssetType === 'custom' && (
+            <Form.Input
+              field="customType"
+              label="自定义类型"
+              placeholder="请输入自定义资产类型名称"
+              rules={[
+                { required: true, message: '请输入自定义资产类型名称' },
+                { max: 50, message: '类型名称不能超过50个字符' }
+              ]}
+            />
+          )}
           
           <Form.Input
             field="domain"
@@ -1547,7 +1925,10 @@ export default function ProjectDetailPage() {
           />
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-            <Button onClick={() => setAssetModalVisible(false)}>
+            <Button onClick={() => {
+              setAssetModalVisible(false);
+              setSelectedAssetType('');
+            }}>
               取消
             </Button>
             <Button theme="solid" type="primary" htmlType="submit">
@@ -1556,6 +1937,150 @@ export default function ProjectDetailPage() {
           </div>
         </Form>
       </Modal>
+
+      {/* 批量导入弹窗 */}
+      <Modal
+        title="批量导入资产"
+        visible={importModalVisible}
+        onCancel={() => {
+          setImportModalVisible(false);
+          setUploadFile(null);
+        }}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Button onClick={handleDownloadTemplate}>
+              下载模板
+            </Button>
+            <Space>
+              <Button onClick={() => setImportModalVisible(false)}>
+                取消
+              </Button>
+              <Button
+                theme="solid"
+                type="primary"
+                onClick={handleConfirmImport}
+                loading={importing}
+                disabled={!uploadFile}
+              >
+                {importing ? '导入中...' : (uploadFile ? '开始导入' : '请先选择文件')}
+              </Button>
+            </Space>
+          </div>
+        }
+        width={600}
+        maskClosable={false}
+      >
+        <div style={{ marginBottom: '20px' }}>
+          <Typography.Title heading={6}>上传Excel文件</Typography.Title>
+          <div style={{
+            border: '2px dashed #d1d5db',
+            borderRadius: '8px',
+            padding: '20px',
+            textAlign: 'center',
+            backgroundColor: uploadFile ? '#f0f9ff' : '#fafafa',
+            borderColor: uploadFile ? '#3b82f6' : '#d1d5db'
+          }}>
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                console.log('原生input选择的文件:', file); // 调试日志
+                if (file) {
+                  console.log('文件详情:', {
+                    name: file.name,
+                    size: file.size,
+                    type: file.type,
+                    isFile: file instanceof File
+                  });
+                  setUploadFile(file);
+                } else {
+                  setUploadFile(null);
+                }
+              }}
+              style={{ display: 'none' }}
+              id="excel-file-input"
+            />
+            <label htmlFor="excel-file-input" style={{ cursor: 'pointer' }}>
+              <div>
+                <IconUpload size="large" style={{ color: uploadFile ? '#3b82f6' : '#6b7280' }} />
+                <div style={{ marginTop: '8px' }}>
+                  <Button theme="light" icon={<IconUpload />}>
+                    选择Excel文件
+                  </Button>
+                </div>
+                <Typography.Text type="tertiary" size="small" style={{ marginTop: '8px', display: 'block' }}>
+                  支持.xlsx和.xls格式，文件大小不超过10MB
+                </Typography.Text>
+              </div>
+            </label>
+          </div>
+
+          {uploadFile && (
+            <div style={{
+              marginTop: '12px',
+              padding: '12px',
+              background: '#f0f9ff',
+              borderRadius: '6px',
+              border: '1px solid #bae6fd',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <Typography.Text size="small" style={{ color: '#0369a1', fontWeight: 'bold' }}>
+                  ✓ 已选择文件: {uploadFile.name}
+                </Typography.Text>
+                <Typography.Text type="tertiary" size="small" style={{ marginLeft: '8px' }}>
+                  ({(uploadFile.size / 1024).toFixed(1)} KB)
+                </Typography.Text>
+              </div>
+              <Button
+                size="small"
+                theme="borderless"
+                type="danger"
+                onClick={() => {
+                  setUploadFile(null);
+                  // 重置input的值
+                  const input = document.getElementById('excel-file-input') as HTMLInputElement;
+                  if (input) input.value = '';
+                }}
+              >
+                移除
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginBottom: '20px' }}>
+          <Typography.Title heading={6}>导入说明</Typography.Title>
+          <div style={{
+            background: '#f8f9fa',
+            padding: '16px',
+            borderRadius: '6px',
+            border: '1px solid #e9ecef'
+          }}>
+            <List
+              size="small"
+              dataSource={[
+                '请先下载Excel模板，在模板基础上填写资产数据',
+                '必填字段：资产名称、资产类型、IP地址、端口',
+                '资产类型：server（服务器）、network_device（网络设备）、database（数据库）、storage_device（存储设备）、custom（自定义类型）',
+                '环境类型：production（生产）、testing（测试）、development（开发）等',
+                '重要性：extremely_high（极高）、high（高）、medium（中）、low（低）',
+                '同一项目中资产名称不能重复',
+                '导入过程中如有错误，系统会显示详细的错误信息'
+              ]}
+              renderItem={(item) => (
+                <List.Item style={{ padding: '4px 0' }}>
+                  <Typography.Text size="small">• {item}</Typography.Text>
+                </List.Item>
+              )}
+            />
+          </div>
+        </div>
+      </Modal>
+
     </div>
   );
-} 
+}

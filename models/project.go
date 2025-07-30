@@ -123,6 +123,18 @@ func (p *Project) GetDevEngineers() []User {
 	return engineers
 }
 
+// HasAccess方法检查用户是否有项目访问权限
+// 项目负责人和项目成员都有访问权限
+func (p *Project) HasAccess(userID uint) bool {
+	// 检查是否是项目负责人
+	if p.OwnerID == userID {
+		return true
+	}
+
+	// 检查是否是项目成员
+	return p.HasMember(userID)
+}
+
 // 数据库表名设置方法
 // GORM会调用这些方法来确定实际的数据库表名
 

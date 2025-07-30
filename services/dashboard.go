@@ -20,6 +20,12 @@ type DashboardData struct {
 	// 漏洞状态统计
 	VulnStatusStats map[string]int64 `json:"vuln_status_stats"`
 
+	// 严重程度统计
+	SeverityStats map[string]int64 `json:"severity_stats"`
+
+	// 趋势数据（最近7天）
+	TrendData []TrendDataItem `json:"trend_data"`
+
 	// 排行榜
 	SecurityEngineerRanking []EngineerRankingItem `json:"security_engineer_ranking,omitempty"`
 	DevEngineerRanking      []EngineerRankingItem `json:"dev_engineer_ranking,omitempty"`
@@ -29,6 +35,14 @@ type DashboardData struct {
 
 	// 当前用户特定数据（仅安全工程师和研发工程师）
 	CurrentUserVulns *UserVulnStats `json:"current_user_vulns,omitempty"`
+}
+
+// TrendDataItem 趋势数据项
+type TrendDataItem struct {
+	Date        string `json:"date"`
+	NewVulns    int64  `json:"new_vulns"`
+	FixedVulns  int64  `json:"fixed_vulns"`
+	PendingVulns int64  `json:"pending_vulns"`
 }
 
 // EngineerRankingItem 工程师排行榜项
@@ -122,15 +136,31 @@ func (s *DashboardService) getSuperAdminDashboard(db *gorm.DB) (*DashboardData, 
 
 	// 研发工程师排行榜（当月修复完成漏洞数）
 	var devRanking []EngineerRankingItem
+
+	// 首先尝试基于 fixed_by 和 fixed_at 的查询（标准流程）
 	db.Table("vulnerabilities").
 		Select("users.id as user_id, users.username, users.real_name, COUNT(*) as count").
 		Joins("JOIN users ON vulnerabilities.fixed_by = users.id").
-		Where("vulnerabilities.fixed_at >= ? AND vulnerabilities.fixed_at < ?",
+		Where("vulnerabilities.fixed_at >= ? AND vulnerabilities.fixed_at < ? AND vulnerabilities.fixed_by IS NOT NULL",
 			currentMonth+"-01", getNextMonthStart(currentMonth)).
 		Group("users.id").
 		Order("count DESC").
 		Limit(10).
 		Scan(&devRanking)
+
+	// 如果基于 fixed_by 的查询没有结果，使用 assignee_id 和状态的查询（兼容性查询）
+	if len(devRanking) == 0 {
+		db.Table("vulnerabilities").
+			Select("users.id as user_id, users.username, users.real_name, COUNT(*) as count").
+			Joins("JOIN users ON vulnerabilities.assignee_id = users.id").
+			Where("vulnerabilities.status IN ('fixed', 'closed', 'completed') AND vulnerabilities.updated_at >= ? AND vulnerabilities.updated_at < ? AND vulnerabilities.assignee_id IS NOT NULL",
+				currentMonth+"-01", getNextMonthStart(currentMonth)).
+			Group("users.id").
+			Order("count DESC").
+			Limit(10).
+			Scan(&devRanking)
+	}
+
 	data.DevEngineerRanking = devRanking
 
 	// 最新漏洞（前10）
@@ -265,15 +295,31 @@ func (s *DashboardService) getDevEngineerDashboard(db *gorm.DB, userID uint) (*D
 	// 研发工程师排行榜（当月修复完成漏洞数）
 	currentMonth := time.Now().Format("2006-01")
 	var devRanking []EngineerRankingItem
+
+	// 首先尝试基于 fixed_by 和 fixed_at 的查询（标准流程）
 	db.Table("vulnerabilities").
 		Select("users.id as user_id, users.username, users.real_name, COUNT(*) as count").
 		Joins("JOIN users ON vulnerabilities.fixed_by = users.id").
-		Where("vulnerabilities.fixed_at >= ? AND vulnerabilities.fixed_at < ?",
+		Where("vulnerabilities.fixed_at >= ? AND vulnerabilities.fixed_at < ? AND vulnerabilities.fixed_by IS NOT NULL",
 			currentMonth+"-01", getNextMonthStart(currentMonth)).
 		Group("users.id").
 		Order("count DESC").
 		Limit(10).
 		Scan(&devRanking)
+
+	// 如果基于 fixed_by 的查询没有结果，使用 assignee_id 和状态的查询（兼容性查询）
+	if len(devRanking) == 0 {
+		db.Table("vulnerabilities").
+			Select("users.id as user_id, users.username, users.real_name, COUNT(*) as count").
+			Joins("JOIN users ON vulnerabilities.assignee_id = users.id").
+			Where("vulnerabilities.status IN ('fixed', 'closed', 'completed') AND vulnerabilities.updated_at >= ? AND vulnerabilities.updated_at < ? AND vulnerabilities.assignee_id IS NOT NULL",
+				currentMonth+"-01", getNextMonthStart(currentMonth)).
+			Group("users.id").
+			Order("count DESC").
+			Limit(10).
+			Scan(&devRanking)
+	}
+
 	data.DevEngineerRanking = devRanking
 
 	// 获取当前用户所拥有的项目

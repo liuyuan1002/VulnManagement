@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // API 基础URL - 可以通过环境变量配置
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5000/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1/api';
 
 // 后端基础URL（用于静态文件访问）
 const BACKEND_BASE_URL = API_BASE_URL.replace('/api', '');
@@ -173,6 +173,12 @@ export const systemApi = {
   // 删除系统配置
   deleteConfig: async (key: string): Promise<ApiResponse> => {
     const response = await api.delete(`/system/configs/${key}`);
+    return response.data;
+  },
+
+  // 测试邮件配置
+  testEmailConfig: async (data: { test_email: string }): Promise<ApiResponse> => {
+    const response = await api.post('/system/email/test', data);
     return response.data;
   },
 };
@@ -470,6 +476,83 @@ export const userApi = {
     new_password: string;
   }): Promise<ApiResponse<void>> => {
     const response = await api.put('/user/password', data);
+    return response.data;
+  },
+
+  // 获取密码策略
+  getPasswordPolicy: async (): Promise<ApiResponse<{
+    policy: {
+      min_length: number;
+      require_uppercase: boolean;
+      require_lowercase: boolean;
+      require_number: boolean;
+      require_special: boolean;
+    };
+    requirements: string[];
+  }>> => {
+    const response = await api.get('/password/policy');
+    return response.data;
+  },
+};
+
+// 周报API
+export const weeklyReportApi = {
+  // 获取周报数据
+  getWeeklyReportData: async (): Promise<ApiResponse<WeeklyReportData>> => {
+    const response = await api.get('/system/weekly-report/data');
+    return response.data;
+  },
+
+  // 预览周报PDF
+  previewWeeklyReportPDF: async (): Promise<Blob> => {
+    const response = await api.get('/system/weekly-report/preview', {
+      responseType: 'blob'
+    });
+    return response.data;
+  },
+
+  // 下载周报PDF
+  downloadWeeklyReportPDF: async (): Promise<Blob> => {
+    const response = await api.get('/system/weekly-report/download', {
+      responseType: 'blob'
+    });
+    return response.data;
+  },
+
+  // 手动发送周报
+  sendWeeklyReport: async (): Promise<ApiResponse<void>> => {
+    const response = await api.post('/system/weekly-report/send');
+    return response.data;
+  },
+
+  // 获取定时任务状态
+  getSchedulerStatus: async (): Promise<ApiResponse<SchedulerStatus>> => {
+    const response = await api.get('/system/weekly-report/scheduler/status');
+    return response.data;
+  },
+
+  // 手动触发定时发送
+  manualSendWeeklyReport: async (): Promise<ApiResponse<void>> => {
+    const response = await api.post('/system/weekly-report/scheduler/send');
+    return response.data;
+  },
+
+  // 获取周报历史记录
+  getWeeklyReportHistory: async (page: number = 1, pageSize: number = 10): Promise<ApiResponse<{
+    list: WeeklyReportRecord[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }>> => {
+    const response = await api.get('/system/weekly-report/history', {
+      params: { page, pageSize }
+    });
+    return response.data;
+  },
+
+  // 手动生成并发送周报
+  generateWeeklyReport: async (): Promise<ApiResponse<void>> => {
+    const response = await api.post('/system/weekly-report/generate');
     return response.data;
   },
 
@@ -918,6 +1001,8 @@ export const vulnApi = {
   },
 };
 
+
+
 // 资产管理API
 export const assetApi = {
   // 获取项目资产列表
@@ -943,6 +1028,116 @@ export const assetApi = {
     const response = await api.delete(`/assets/${id}`);
     return response.data;
   },
+
+
+
+  // 批量导出资产
+  exportAssets: async (assetIds: number[], projectId: number): Promise<Blob> => {
+    const response = await api.post('/assets/export', {
+      asset_ids: assetIds,
+      project_id: projectId,
+    }, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  // 批量导入资产
+  importAssets: async (file: File, projectId: number): Promise<ApiResponse<any>> => {
+    console.log('准备发送文件:', file); // 调试日志
+    console.log('项目ID:', projectId); // 调试日志
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('project_id', projectId.toString());
+
+    // 调试：打印FormData内容
+    console.log('FormData内容:');
+    for (let [key, value] of formData.entries()) {
+      console.log(key, value);
+    }
+
+    const response = await api.post('/assets/import', formData, {
+      headers: {
+        // 删除默认的Content-Type，让浏览器自动设置multipart/form-data
+        'Content-Type': undefined,
+      },
+    });
+    return response.data;
+  },
+
+  // 下载资产导入模板
+  downloadImportTemplate: async (): Promise<Blob> => {
+    const response = await api.get('/assets/import/template', {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
 };
 
-export default api; 
+// 周报相关类型定义
+export interface WeeklyReportData {
+  week_start: string;
+  week_end: string;
+  total_submitted: number;
+  total_fixed: number;
+  total_fixing: number;
+  total_retesting: number;
+  security_engineer_ranking: EngineerWeeklyRanking[];
+  dev_engineer_ranking: EngineerWeeklyRanking[];
+  project_vuln_ranking: ProjectWeeklyRanking[];
+  severity_stats: Record<string, number>;
+  status_stats: Record<string, number>;
+  generated_at: string;
+}
+
+export interface EngineerWeeklyRanking {
+  user_id: number;
+  username: string;
+  real_name: string;
+  count: number;
+  department: string;
+}
+
+export interface ProjectWeeklyRanking {
+  project_id: number;
+  project_name: string;
+  vuln_count: number;
+  owner_name: string;
+}
+
+export interface SchedulerStatus {
+  running: boolean;
+  task_count: number;
+  tasks: SchedulerTask[];
+}
+
+export interface SchedulerTask {
+  id: number;
+  name: string;
+  schedule: string;
+  next_run: string;
+  prev_run: string;
+}
+
+export interface WeeklyReportRecord {
+  id: number;
+  week_start: string;
+  week_end: string;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  total_submitted: number;
+  total_fixed: number;
+  total_fixing: number;
+  total_retesting: number;
+  generated_by: number;
+  generated_by_name: string;
+  sent_to: string;
+  sent_at: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export default api;

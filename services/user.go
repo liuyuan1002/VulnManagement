@@ -9,6 +9,7 @@ import (
 	"time"
 	Init "vulnmain/Init"
 	"vulnmain/models"
+	"vulnmain/utils"
 )
 
 type UserService struct{}
@@ -79,6 +80,11 @@ func (s *UserService) CreateUser(req *UserCreateRequest) (*models.User, error) {
 		RoleID:     req.RoleID,
 	}
 
+	// 验证密码复杂度
+	if err := utils.ValidatePassword(req.Password); err != nil {
+		return nil, err
+	}
+
 	// 设置密码
 	if err := user.SetPassword(req.Password); err != nil {
 		return nil, errors.New("密码设置失败")
@@ -90,6 +96,19 @@ func (s *UserService) CreateUser(req *UserCreateRequest) (*models.User, error) {
 
 	// 重新查询用户信息(包含关联的角色)
 	db.Preload("Role").Where("id = ?", user.Model.ID).First(&user)
+
+	// 发送用户注册成功邮件通知
+	go func() {
+		userName := user.RealName
+		if userName == "" {
+			userName = user.Username
+		}
+
+		if err := SendUserRegisteredNotification(userName, user.Email, req.Password); err != nil {
+			// 记录邮件发送失败的日志，但不影响用户创建
+			fmt.Printf("发送用户注册通知邮件失败: %v\n", err)
+		}
+	}()
 
 	return &user, nil
 }
@@ -250,6 +269,11 @@ func (s *UserService) ResetPassword(userID uint, newPassword string) error {
 		return errors.New("用户不存在")
 	}
 
+	// 验证密码复杂度
+	if err := utils.ValidatePassword(newPassword); err != nil {
+		return err
+	}
+
 	if err := user.SetPassword(newPassword); err != nil {
 		return errors.New("密码设置失败")
 	}
@@ -257,6 +281,19 @@ func (s *UserService) ResetPassword(userID uint, newPassword string) error {
 	if err := db.Save(&user).Error; err != nil {
 		return errors.New("重置密码失败")
 	}
+
+	// 发送密码重置邮件通知
+	go func() {
+		userName := user.RealName
+		if userName == "" {
+			userName = user.Username
+		}
+
+		if err := SendPasswordResetNotification(userName, user.Email, newPassword); err != nil {
+			// 记录邮件发送失败的日志，但不影响密码重置
+			fmt.Printf("发送密码重置通知邮件失败: %v\n", err)
+		}
+	}()
 
 	return nil
 }
@@ -273,6 +310,11 @@ func (s *UserService) ChangePassword(userID uint, oldPassword, newPassword strin
 	// 验证原密码
 	if !user.CheckPassword(oldPassword) {
 		return errors.New("原密码错误")
+	}
+
+	// 验证新密码复杂度
+	if err := utils.ValidatePassword(newPassword); err != nil {
+		return err
 	}
 
 	// 设置新密码

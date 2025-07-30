@@ -182,6 +182,38 @@ func (s *ProjectService) CreateProject(req *CreateProjectRequest, creatorID uint
 		return nil, fmt.Errorf("提交事务失败: %v", err)
 	}
 
+	// 发送邮件通知给项目成员
+	go func() {
+		// 获取项目成员邮箱列表
+		var memberEmails []string
+		var memberNames []string
+
+		for _, memberID := range req.MemberIDs {
+			var member models.User
+			if err := db.First(&member, memberID).Error; err == nil && member.Email != "" {
+				memberEmails = append(memberEmails, member.Email)
+				if member.RealName != "" {
+					memberNames = append(memberNames, member.RealName)
+				} else {
+					memberNames = append(memberNames, member.Username)
+				}
+			}
+		}
+
+		// 发送项目创建通知
+		if len(memberEmails) > 0 {
+			ownerName := owner.RealName
+			if ownerName == "" {
+				ownerName = owner.Username
+			}
+
+			if err := SendProjectCreatedNotification(req.Name, ownerName, memberEmails); err != nil {
+				// 记录邮件发送失败的日志，但不影响项目创建
+				fmt.Printf("发送项目创建通知邮件失败: %v\n", err)
+			}
+		}
+	}()
+
 	// 返回项目信息
 	return s.GetProject(project.ID, creatorID, "super_admin")
 }
@@ -207,16 +239,30 @@ func (s *ProjectService) GetProject(projectID, userID uint, roleCode string) (*P
 	var assets []models.Asset
 	assetQuery := db.Preload("Project").Preload("AssetGroup").Preload("Creator").Where("project_id = ?", projectID)
 
-	// 如果不是超级管理员，需要检查用户是否是项目成员
+	// 如果不是超级管理员，需要检查用户是否有项目权限
 	if roleCode != "super_admin" {
-		var memberCount int64
-		db.Model(&models.ProjectMember{}).Where("project_id = ? AND user_id = ?", projectID, userID).Count(&memberCount)
-		if memberCount == 0 {
-			// 用户不是项目成员，不能查看项目资产
-			assets = []models.Asset{}
-		} else {
-			// 用户是项目成员，可以查看项目内所有资产
+		hasAccess := false
+
+		// 检查是否是项目负责人
+		if project.OwnerID == userID {
+			hasAccess = true
+		}
+
+		// 如果不是项目负责人，检查是否是项目成员
+		if !hasAccess {
+			var memberCount int64
+			db.Model(&models.ProjectMember{}).Where("project_id = ? AND user_id = ?", projectID, userID).Count(&memberCount)
+			if memberCount > 0 {
+				hasAccess = true
+			}
+		}
+
+		if hasAccess {
+			// 用户是项目负责人或项目成员，可以查看项目内所有资产
 			assetQuery.Find(&assets)
+		} else {
+			// 用户既不是项目负责人也不是项目成员，不能查看项目资产
+			assets = []models.Asset{}
 		}
 	} else {
 		// 超级管理员可以查看所有资产
@@ -232,14 +278,28 @@ func (s *ProjectService) GetProject(projectID, userID uint, roleCode string) (*P
 
 	// 应用相同的权限控制逻辑
 	if roleCode != "super_admin" {
-		var memberCount int64
-		db.Model(&models.ProjectMember{}).Where("project_id = ? AND user_id = ?", projectID, userID).Count(&memberCount)
-		if memberCount == 0 {
-			// 用户不是项目成员，不能查看项目漏洞
-			vulns = []models.Vulnerability{}
-		} else {
-			// 用户是项目成员，可以查看项目内所有漏洞
+		hasAccess := false
+
+		// 检查是否是项目负责人
+		if project.OwnerID == userID {
+			hasAccess = true
+		}
+
+		// 如果不是项目负责人，检查是否是项目成员
+		if !hasAccess {
+			var memberCount int64
+			db.Model(&models.ProjectMember{}).Where("project_id = ? AND user_id = ?", projectID, userID).Count(&memberCount)
+			if memberCount > 0 {
+				hasAccess = true
+			}
+		}
+
+		if hasAccess {
+			// 用户是项目负责人或项目成员，可以查看项目内所有漏洞
 			vulnQuery.Find(&vulns)
+		} else {
+			// 用户既不是项目负责人也不是项目成员，不能查看项目漏洞
+			vulns = []models.Vulnerability{}
 		}
 	} else {
 		// 超级管理员可以查看所有漏洞
@@ -278,7 +338,7 @@ func (s *ProjectService) GetProjectList(req *ProjectListRequest) (*ProjectListRe
 		req.PageSize = 10
 	}
 
-	query := db.Model(&models.Project{}).Preload("Owner").Preload("Creator")
+	query := db.Model(&models.Project{}).Preload("Owner").Preload("Creator").Preload("Members").Preload("Members.User")
 
 	// 如果不是超级管理员，需要过滤项目
 	if req.RoleCode != "super_admin" {
@@ -417,7 +477,28 @@ func (s *ProjectService) UpdateProject(projectID uint, req *UpdateProjectRequest
 	}
 
 	// 更新项目成员
+	var newMemberIDs []uint // 存储新增的成员ID
 	if req.MemberIDs != nil {
+		// 获取现有成员ID列表
+		var existingMemberIDs []uint
+		for _, member := range project.Members {
+			existingMemberIDs = append(existingMemberIDs, member.UserID)
+		}
+
+		// 找出新增的成员
+		for _, memberID := range req.MemberIDs {
+			isExisting := false
+			for _, existingID := range existingMemberIDs {
+				if memberID == existingID {
+					isExisting = true
+					break
+				}
+			}
+			if !isExisting {
+				newMemberIDs = append(newMemberIDs, memberID)
+			}
+		}
+
 		// 删除现有成员
 		if err := tx.Where("project_id = ?", projectID).Delete(&models.ProjectMember{}).Error; err != nil {
 			tx.Rollback()
@@ -456,6 +537,48 @@ func (s *ProjectService) UpdateProject(projectID uint, req *UpdateProjectRequest
 	// 提交事务
 	if err := tx.Commit().Error; err != nil {
 		return nil, fmt.Errorf("提交事务失败: %v", err)
+	}
+
+	// 发送邮件通知给新增的项目成员
+	if len(newMemberIDs) > 0 {
+		go func() {
+			// 获取项目信息
+			var updatedProject models.Project
+			if err := db.Preload("Owner").First(&updatedProject, projectID).Error; err != nil {
+				fmt.Printf("获取项目信息失败，无法发送邮件通知: %v\n", err)
+				return
+			}
+
+			// 获取新增成员的邮箱列表
+			var newMemberEmails []string
+			var newMemberNames []string
+
+			for _, memberID := range newMemberIDs {
+				var member models.User
+				if err := db.First(&member, memberID).Error; err == nil && member.Email != "" {
+					newMemberEmails = append(newMemberEmails, member.Email)
+					if member.RealName != "" {
+						newMemberNames = append(newMemberNames, member.RealName)
+					} else {
+						newMemberNames = append(newMemberNames, member.Username)
+					}
+				}
+			}
+
+			// 发送项目成员新增通知
+			if len(newMemberEmails) > 0 {
+				ownerName := updatedProject.Owner.RealName
+				if ownerName == "" {
+					ownerName = updatedProject.Owner.Username
+				}
+
+				// 使用项目新增成员通知模板
+				if err := SendProjectMemberAddedNotification(updatedProject.Name, ownerName, newMemberEmails); err != nil {
+					// 记录邮件发送失败的日志，但不影响项目更新
+					fmt.Printf("发送项目成员新增通知邮件失败: %v\n", err)
+				}
+			}
+		}()
 	}
 
 	// 返回更新后的项目信息
@@ -547,15 +670,15 @@ func (s *ProjectService) GetUserProjects(userID uint, roleCode string) ([]*Proje
 	db := Init.GetDB()
 
 	var projects []models.Project
-	query := db.Preload("Owner").Preload("Creator")
+	query := db.Preload("Owner").Preload("Creator").Preload("Members").Preload("Members.User")
 
 	if roleCode == "super_admin" {
 		// 超级管理员可以看到所有项目
-		query = query.Find(&projects)
+		query = query.Order("created_at DESC").Find(&projects)
 	} else {
 		// 其他角色只能看到自己相关的项目
 		query = query.Where("is_public = ? OR owner_id = ? OR id IN (SELECT project_id FROM project_members WHERE user_id = ?)",
-			true, userID, userID).Find(&projects)
+			true, userID, userID).Order("created_at DESC").Find(&projects)
 	}
 
 	if err := query.Error; err != nil {

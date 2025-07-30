@@ -6,6 +6,7 @@ import (
 	Init "vulnmain/Init" // 导入项目初始化包，包含配置和数据库初始化功能
 	"vulnmain/models"    // 导入数据模型包，包含数据表结构定义
 	"vulnmain/routers"   // 导入路由包，包含API路由配置
+	"vulnmain/services"  // 导入服务包，包含业务逻辑服务
 
 	"github.com/gin-gonic/gin"   // 导入Gin Web框架，用于构建HTTP服务
 	"github.com/gogf/gf/frame/g" // 导入GoFrame框架的全局对象，主要用于日志记录
@@ -41,6 +42,15 @@ func main() {
 
 	// 初始化应用程序的所有路由规则，包括API接口路由
 	routers.InitRouter(r)
+
+	// 初始化定时任务服务
+	if err := services.InitScheduler(); err != nil {
+		g.Log().Errorf("初始化定时任务服务失败: %v", err)
+	} else {
+		g.Log().Info("定时任务服务初始化成功")
+		// 确保在程序退出时停止定时任务
+		defer services.StopScheduler()
+	}
 
 	//从配置文件中读取服务器端口配置
 	port := viper.GetString("server.port")

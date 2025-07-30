@@ -53,6 +53,9 @@ func InitRouter(r *gin.Engine) *gin.Engine {
 	// 静态文件服务 - 提供上传的文件访问
 	r.Static("/uploads", "./uploads")
 
+	// 专门为周报PDF文件提供静态访问
+	r.Static("/weekly-reports", "./uploads/weekly")
+
 	// 公开API组 - 不需要JWT认证的接口
 	// 这些接口可以匿名访问，主要用于用户登录和令牌刷新
 	publicAPI := r.Group("/api")
@@ -60,6 +63,7 @@ func InitRouter(r *gin.Engine) *gin.Engine {
 		// 认证相关接口
 		publicAPI.POST("/login", api.Login)          // 用户登录接口
 		publicAPI.POST("/refresh", api.RefreshToken) // JWT令牌刷新接口
+		publicAPI.GET("/password/policy", api.GetPasswordPolicy) // 获取密码策略
 
 		// 公开系统信息接口
 		publicAPI.GET("/system/info", api.GetPublicSystemInfo) // 获取公开的系统信息（公司名称等）
@@ -177,6 +181,8 @@ func InitRouter(r *gin.Engine) *gin.Engine {
 			assetViewAPI.GET("/stats", api.GetAssetStats)   // 获取资产统计信息
 			assetViewAPI.GET("/:id", api.GetAsset)          // 获取资产详情
 			assetViewAPI.GET("/groups", api.GetAssetGroups) // 获取资产组列表
+			assetViewAPI.POST("/export", api.ExportAssets)  // 批量导出资产
+			assetViewAPI.GET("/import/template", api.DownloadAssetTemplate) // 下载导入模板
 		}
 
 		// 资产创建权限组 - 可以创建新资产
@@ -185,6 +191,7 @@ func InitRouter(r *gin.Engine) *gin.Engine {
 		{
 			assetCreateAPI.POST("", api.CreateAsset)             // 创建新资产
 			assetCreateAPI.POST("/groups", api.CreateAssetGroup) // 创建资产组
+			assetCreateAPI.POST("/import", api.ImportAssets)     // 批量导入资产
 		}
 
 		// 资产编辑权限组 - 可以修改资产信息
@@ -257,6 +264,7 @@ func InitRouter(r *gin.Engine) *gin.Engine {
 			systemConfigAPI.PUT("/configs/:key", api.UpdateSystemConfig)    // 更新系统配置
 			systemConfigAPI.POST("/configs", api.CreateSystemConfig)        // 创建系统配置
 			systemConfigAPI.DELETE("/configs/:key", api.DeleteSystemConfig) // 删除系统配置
+			systemConfigAPI.POST("/email/test", api.TestEmailConfig)        // 测试邮件配置
 		}
 
 		// 系统日志权限组 - 可以查看操作日志
@@ -271,6 +279,24 @@ func InitRouter(r *gin.Engine) *gin.Engine {
 		systemStatsAPI.Use(middleware.PermissionMiddleware("system:stats"))
 		{
 			systemStatsAPI.GET("/stats", api.GetSystemStats) // 获取系统统计数据
+		}
+
+		// 周报管理权限组 - 可以管理周报
+		weeklyReportAPI := systemAPI.Group("/weekly-report")
+		weeklyReportAPI.Use(middleware.PermissionMiddleware("system:config")) // 使用系统配置权限
+		{
+			weeklyReportAPI.GET("/data", api.GetWeeklyReportData)        // 获取周报数据
+			weeklyReportAPI.GET("/preview", api.PreviewWeeklyReportPDF)  // 预览周报PDF
+			weeklyReportAPI.GET("/download", api.DownloadWeeklyReportPDF) // 下载周报PDF
+			weeklyReportAPI.POST("/send", api.SendWeeklyReport)          // 手动发送周报
+			weeklyReportAPI.POST("/generate", api.ManualGenerateWeeklyReport) // 手动生成并发送周报
+			weeklyReportAPI.GET("/scheduler/status", api.GetSchedulerStatus) // 获取定时任务状态
+			weeklyReportAPI.POST("/scheduler/send", api.ManualSendWeeklyReport) // 手动触发定时发送
+
+			// 周报历史记录管理
+			weeklyReportAPI.GET("/history", api.GetWeeklyReportHistory)     // 获取周报历史记录
+			weeklyReportAPI.GET("/file/:id/preview", api.PreviewWeeklyReportFile) // 预览历史周报文件
+			weeklyReportAPI.GET("/file/:id/download", api.DownloadWeeklyReportFile) // 下载历史周报文件
 		}
 
 		// 通知相关接口 - 所有已认证用户都可以访问

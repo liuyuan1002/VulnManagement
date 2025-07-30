@@ -66,6 +66,13 @@ func GetSystemConfigs(c *gin.Context) {
 		return
 	}
 
+	// 对敏感信息进行脱敏处理
+	for i := range configs {
+		if configs[i].Key == "email.password" && configs[i].Value != "" {
+			configs[i].Value = "********" // 用星号替换密码
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
 		"msg":  "获取成功",
@@ -84,6 +91,11 @@ func GetSystemConfig(c *gin.Context) {
 			"msg":  err.Error(),
 		})
 		return
+	}
+
+	// 对敏感信息进行脱敏处理
+	if config.Key == "email.password" && config.Value != "" {
+		config.Value = "********" // 用星号替换密码
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -352,5 +364,73 @@ func GetDictionaries(c *gin.Context) {
 		"code": 200,
 		"msg":  "获取成功",
 		"data": dictionaries,
+	})
+}
+
+// TestEmailConfig 测试邮件配置
+func TestEmailConfig(c *gin.Context) {
+	// 检查权限
+	roleCode := c.GetString("role_code")
+	if roleCode != "super_admin" {
+		c.JSON(http.StatusForbidden, gin.H{
+			"code": 403,
+			"msg":  "权限不足",
+		})
+		return
+	}
+
+	// 获取测试邮箱
+	var req struct {
+		TestEmail string `json:"test_email" binding:"required,email"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code": 400,
+			"msg":  "参数错误: " + err.Error(),
+		})
+		return
+	}
+
+	// 发送测试邮件
+	err := services.SendEmail([]string{req.TestEmail}, "【VulnMain】邮件配置测试", `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>邮件配置测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #28a745; color: white; padding: 20px; text-align: center; }
+        .content { padding: 20px; background: #f9f9f9; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>邮件配置测试</h2>
+        </div>
+        <div class="content">
+            <p>恭喜！您的邮件配置已成功设置。</p>
+            <p>VulnMain系统现在可以正常发送邮件通知了。</p>
+            <p>此邮件是系统自动发送的测试邮件，请勿回复。</p>
+        </div>
+    </div>
+</body>
+</html>
+	`)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"code": 500,
+			"msg":  "邮件发送失败: " + err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"msg":  "测试邮件发送成功",
 	})
 }

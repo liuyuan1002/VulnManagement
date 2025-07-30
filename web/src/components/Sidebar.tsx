@@ -1,7 +1,7 @@
 'use client';
 
 import { Nav, Button, Modal } from '@douyinfe/semi-ui';
-import { 
+import {
   IconHome,
   IconFolderOpen,
   IconUserGroup,

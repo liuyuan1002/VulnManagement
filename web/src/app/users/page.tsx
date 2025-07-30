@@ -1,24 +1,26 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { 
-  Card, 
-  Typography, 
-  Button, 
-  Table, 
-  Tag, 
-  Space, 
-  Avatar, 
-  Modal, 
-  Form, 
-  Input, 
-  Select, 
-  Switch, 
-  Toast, 
-  Empty, 
+import {
+  Card,
+  Typography,
+  Button,
+  Table,
+  Tag,
+  Space,
+  Avatar,
+  Modal,
+  Form,
+  Input,
+  Select,
+  Switch,
+  Toast,
+  Empty,
   Spin,
   Badge
 } from '@douyinfe/semi-ui';
+import PasswordStrengthIndicator from '@/components/PasswordStrengthIndicator';
+import type { PasswordValidationResult } from '@/utils/password';
 import { 
   IconPlus, 
   IconEdit, 
@@ -66,6 +68,10 @@ export default function UsersPage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const isAdmin = currentUser?.role_id === 1;
+
+  // 密码验证状态
+  const [createPasswordValidation, setCreatePasswordValidation] = useState<PasswordValidationResult | null>(null);
+  const [resetPasswordValidation, setResetPasswordValidation] = useState<PasswordValidationResult | null>(null);
 
   // 权限检查：非管理员用户跳转到首页
   useEffect(() => {
@@ -204,7 +210,11 @@ export default function UsersPage() {
       };
 
       if (!editingUser) {
-        // 创建用户时需要密码
+        // 创建用户时需要密码和验证
+        if (!createPasswordValidation || !createPasswordValidation.isValid) {
+          Toast.error('密码不符合安全要求，请检查密码强度提示');
+          return;
+        }
         (userData as UserCreateRequest).password = values.password;
       }
 
@@ -254,6 +264,12 @@ export default function UsersPage() {
 
   const handleConfirmResetPassword = async (values: any) => {
     if (!resetPasswordUser) return;
+
+    // 验证密码复杂度
+    if (!resetPasswordValidation || !resetPasswordValidation.isValid) {
+      Toast.error('密码不符合安全要求，请检查密码强度提示');
+      return;
+    }
 
     try {
       const userId = resetPasswordUser.ID || resetPasswordUser.id;
@@ -618,17 +634,28 @@ export default function UsersPage() {
             />
 
             {!editingUser && (
-              <Form.Input
-                field="password"
-                label="密码"
-                type="password"
-                placeholder="请输入密码"
-                rules={[
-                  { required: true, message: '请输入密码' },
-                  { min: 6, message: '密码至少6位' }
-                ]}
-                style={{ marginBottom: '16px' }}
-              />
+              <div style={{ marginBottom: '16px' }}>
+                <Form.Input
+                  field="password"
+                  label="密码"
+                  type="password"
+                  placeholder="请输入密码"
+                  rules={[
+                    { required: true, message: '请输入密码' }
+                  ]}
+                />
+                <Form.Slot field="password">
+                  {({ value }) => (
+                    <div style={{ marginLeft: '80px', marginTop: '8px' }}>
+                      <PasswordStrengthIndicator
+                        password={value || ''}
+                        onValidationChange={setCreatePasswordValidation}
+                        showRequirements={true}
+                      />
+                    </div>
+                  )}
+                </Form.Slot>
+              </div>
             )}
           </div>
 
@@ -697,51 +724,131 @@ export default function UsersPage() {
         visible={resetPasswordModalVisible}
         onCancel={() => setResetPasswordModalVisible(false)}
         footer={null}
-        width={400}
+        width={600}
         destroyOnClose={true}
         maskClosable={false}
+        style={{ top: 100 }}
       >
-        <Form
-          getFormApi={(api) => setResetPasswordFormRef(api)}
-          onSubmit={handleConfirmResetPassword}
-          labelPosition="left"
-          labelAlign="left"
-          labelWidth={80}
-        >
-          <div style={{ marginBottom: '16px' }}>
-            <Text>用户：<Text strong>{resetPasswordUser?.username}</Text></Text>
-          </div>
+        <div style={{ padding: '8px 0' }}>
+          {/* 用户信息卡片 */}
+          <Card
+            style={{
+              marginBottom: '24px',
+              backgroundColor: '#f8f9fa',
+              border: '1px solid #e9ecef'
+            }}
+            bodyStyle={{ padding: '16px' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                backgroundColor: '#1890ff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontWeight: 'bold',
+                fontSize: '16px'
+              }}>
+                {resetPasswordUser?.username?.charAt(0)?.toUpperCase()}
+              </div>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>
+                  {resetPasswordUser?.real_name || resetPasswordUser?.username}
+                </div>
+                <div style={{ fontSize: '14px', color: '#666' }}>
+                  用户名：{resetPasswordUser?.username}
+                </div>
+                {resetPasswordUser?.email && (
+                  <div style={{ fontSize: '14px', color: '#666' }}>
+                    邮箱：{resetPasswordUser?.email}
+                  </div>
+                )}
+              </div>
+            </div>
+          </Card>
 
-          <Form.Input
-            field="password"
-            label="新密码"
-            type="password"
-            placeholder="请输入新密码"
-            rules={[
-              { required: true, message: '请输入新密码' },
-              { min: 6, message: '密码至少6位' }
-            ]}
-          />
+          <Form
+            getFormApi={(api) => setResetPasswordFormRef(api)}
+            onSubmit={handleConfirmResetPassword}
+            labelPosition="top"
+            style={{ maxWidth: '100%' }}
+          >
+            <div style={{ marginBottom: '24px' }}>
+              <Form.Input
+                field="password"
+                label="新密码"
+                type="password"
+                placeholder="请输入新密码"
+                size="large"
+                rules={[
+                  { required: true, message: '请输入新密码' }
+                ]}
+                style={{ marginBottom: '12px' }}
+              />
+              <Form.Slot field="password">
+                {({ value }) => (
+                  <div style={{ marginTop: '8px' }}>
+                    <PasswordStrengthIndicator
+                      password={value || ''}
+                      onValidationChange={setResetPasswordValidation}
+                      showRequirements={true}
+                    />
+                  </div>
+                )}
+              </Form.Slot>
+            </div>
 
-          <Form.Input
-            field="confirmPassword"
-            label="确认密码"
-            type="password"
-            placeholder="请再次输入新密码"
-            rules={[
-              { required: true, message: '请确认密码' }
-            ]}
-          />
+            <div style={{ marginBottom: '32px' }}>
+              <Form.Input
+                field="confirmPassword"
+                label="确认密码"
+                type="password"
+                placeholder="请再次输入新密码"
+                size="large"
+                rules={[
+                  { required: true, message: '请确认密码' },
+                  {
+                    validator: (rule, value, callback) => {
+                      const form = resetPasswordFormRef;
+                      if (form && value && value !== form.getValue('password')) {
+                        callback('两次输入的密码不一致');
+                      } else {
+                        callback();
+                      }
+                    }
+                  }
+                ]}
+              />
+            </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-            <Button onClick={() => setResetPasswordModalVisible(false)}>
-              取消
-            </Button>
-            <Button theme="solid" type="primary" htmlType="submit">
-              确认重置
-            </Button>
-          </div>
-        </Form>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '12px',
+              paddingTop: '16px',
+              borderTop: '1px solid #f0f0f0'
+            }}>
+              <Button
+                size="large"
+                onClick={() => setResetPasswordModalVisible(false)}
+              >
+                取消
+              </Button>
+              <Button
+                theme="solid"
+                type="primary"
+                htmlType="submit"
+                size="large"
+                style={{ minWidth: '100px' }}
+              >
+                确认重置
+              </Button>
+            </div>
+          </Form>
+        </div>
       </Modal>
 
       {/* 删除确认弹窗 */}

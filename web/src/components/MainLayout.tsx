@@ -6,6 +6,8 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Button, Avatar, Dropdown, Modal, Form, Input, Toast, Spin } from '@douyinfe/semi-ui';
 import { IconUser, IconExit, IconShield, IconEdit } from '@douyinfe/semi-icons';
 import { authUtils, userApi } from '@/lib/api';
+import PasswordStrengthIndicator from './PasswordStrengthIndicator';
+import type { PasswordValidationResult } from '@/utils/password';
 
 interface User {
   id: number;
@@ -39,6 +41,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
     new_password: '',
     confirm_password: '',
   });
+  const [passwordValidation, setPasswordValidation] = useState<PasswordValidationResult | null>(null);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -143,14 +146,16 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const handleSaveProfile = async (values: any) => {
     setLoading(true);
     try {
-      // 如果要修改密码，先验证密码一致性
+      // 如果要修改密码，先验证密码一致性和复杂度
       if (values.old_password && values.new_password) {
         if (values.new_password !== values.confirm_password) {
           Toast.error('两次输入的密码不一致');
           return;
         }
-        if (values.new_password.length < 6) {
-          Toast.error('密码长度至少6位');
+
+        // 检查密码复杂度
+        if (!passwordValidation || !passwordValidation.isValid) {
+          Toast.error('新密码不符合安全要求，请检查密码强度提示');
           return;
         }
       }
@@ -408,15 +413,25 @@ export default function MainLayout({ children }: MainLayoutProps) {
                   style={{ flex: 1 }}
                 />
               </div>
-              <div style={{ display: 'flex', marginBottom: '16px' }}>
-                <div style={{ width: '80px', textAlign: 'right', paddingRight: '12px', lineHeight: '32px' }}>新密码:</div>
-                <Input
-                  mode="password"
-                  value={passwordData.new_password}
-                  onChange={(value) => setPasswordData(prev => ({ ...prev, new_password: value }))}
-                  placeholder="请输入新密码"
-                  style={{ flex: 1 }}
-                />
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', marginBottom: '8px' }}>
+                  <div style={{ width: '80px', textAlign: 'right', paddingRight: '12px', lineHeight: '32px' }}>新密码:</div>
+                  <Input
+                    mode="password"
+                    value={passwordData.new_password}
+                    onChange={(value) => setPasswordData(prev => ({ ...prev, new_password: value }))}
+                    placeholder="请输入新密码"
+                    style={{ flex: 1 }}
+                  />
+                </div>
+                {/* 密码强度指示器 */}
+                <div style={{ marginLeft: '92px' }}>
+                  <PasswordStrengthIndicator
+                    password={passwordData.new_password}
+                    onValidationChange={setPasswordValidation}
+                    showRequirements={true}
+                  />
+                </div>
               </div>
               <div style={{ display: 'flex', marginBottom: '16px' }}>
                 <div style={{ width: '80px', textAlign: 'right', paddingRight: '12px', lineHeight: '32px' }}>确认密码:</div>
