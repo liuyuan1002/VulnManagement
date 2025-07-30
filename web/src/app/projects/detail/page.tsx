@@ -64,6 +64,7 @@ import {
   ASSET_IMPORTANCE_LEVELS,
   VulnCreateRequest,
   VulnUpdateRequest,
+  VulnTimeline,
   AssetCreateRequest,
   AssetUpdateRequest
 } from '@/lib/api';
@@ -91,7 +92,29 @@ export default function ProjectDetailPage() {
   const [vulnDetailModalVisible, setVulnDetailModalVisible] = useState(false);
   const [viewingVuln, setViewingVuln] = useState<Vulnerability | null>(null);
   const [vulnDetailLoading, setVulnDetailLoading] = useState(false);
-  
+
+  // 状态变更相关状态（研发工程师专用）
+  const [statusChangeModalVisible, setStatusChangeModalVisible] = useState(false);
+  const [changingVuln, setChangingVuln] = useState<Vulnerability | null>(null);
+  const [statusChangeFormRef, setStatusChangeFormRef] = useState<any>(null);
+  const [selectedStatus, setSelectedStatus] = useState<string>('');
+
+  // 时间线相关状态
+  const [vulnTimeline, setVulnTimeline] = useState<VulnTimeline[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+
+  // 刷新时间线数据的通用函数
+  const refreshTimeline = async (vulnId: number) => {
+    try {
+      const timelineResponse = await vulnApi.getVulnTimeline(vulnId);
+      if (timelineResponse.code === 200) {
+        setVulnTimeline(timelineResponse.data || []);
+      }
+    } catch (error) {
+      console.error('刷新时间线失败:', error);
+    }
+  };
+
   // 资产相关状态
   const [assets, setAssets] = useState<Asset[]>([]);
   const [assetModalVisible, setAssetModalVisible] = useState(false);
@@ -330,6 +353,13 @@ export default function ProjectDetailPage() {
   };
 
   const handleEditVuln = async (vuln: Vulnerability) => {
+    // 研发工程师使用状态变更弹窗
+    if (isDevEngineer) {
+      handleChangeVulnStatus(vuln);
+      return;
+    }
+
+    // 其他角色使用原有的编辑功能
     // 确保资产数据已加载，如果还没有加载就先加载
     const availableAssets = getAvailableAssets();
     if (availableAssets.length === 0) {
@@ -340,21 +370,112 @@ export default function ProjectDetailPage() {
         Toast.warning('资产数据加载失败，您可能无法看到完整的资产列表');
       }
     }
-    
+
     setEditingVuln(vuln);
     setVulnDescription(vuln.description || ''); // 设置markdown内容
     setVulnModalVisible(true);
     // 表单值设置由 useEffect 处理
   };
 
+  // 研发工程师状态变更处理
+  const handleChangeVulnStatus = (vuln: Vulnerability) => {
+    setChangingVuln(vuln);
+    setSelectedStatus(vuln.status); // 初始化为当前状态
+    setStatusChangeModalVisible(true);
+  };
+
+  // 保存状态变更
+  const handleSaveStatusChange = async (values: any) => {
+    if (!changingVuln) return;
+
+    try {
+      // 验证驳回状态必须填写批注
+      if (selectedStatus === 'rejected' && (!values.comment || !values.comment.trim())) {
+        Toast.error('驳回漏洞时必须填写批注');
+        return;
+      }
+
+      const updateData: any = {
+        status: selectedStatus,
+      };
+
+      // 如果有批注，添加到更新数据中
+      if (values.comment && values.comment.trim()) {
+        updateData.comment = values.comment.trim();
+      }
+
+      // 根据状态设置相应的时间戳和处理人
+      const now = new Date().toISOString();
+      const userId = currentUser?.ID || currentUser?.id;
+
+      switch (selectedStatus) {
+        case 'fixing':
+          updateData.fix_started_at = now;
+          updateData.fixer_id = userId;
+          break;
+        case 'fixed':
+          updateData.fixed_at = now;
+          updateData.fixer_id = userId;
+          break;
+        case 'rejected':
+          updateData.rejected_at = now;
+          updateData.rejected_by = userId;
+          updateData.reject_reason = values.comment.trim();
+          break;
+      }
+
+      await vulnApi.updateVuln(changingVuln.id, updateData);
+
+      // 关闭弹窗并重置状态
+      setStatusChangeModalVisible(false);
+      setChangingVuln(null);
+      setSelectedStatus('');
+
+      // 重置表单
+      if (statusChangeFormRef) {
+        statusChangeFormRef.reset();
+      }
+
+      // 刷新漏洞列表
+      await loadVulnerabilities();
+
+      // 如果当前正在查看这个漏洞的详情，需要刷新详情和时间线
+      if (viewingVuln && viewingVuln.id === changingVuln.id) {
+        try {
+          // 重新获取漏洞详情
+          const response = await vulnApi.getVuln(changingVuln.id);
+          if (response.code === 200 && response.data) {
+            setViewingVuln(response.data);
+          }
+
+          // 刷新时间线数据
+          await refreshTimeline(changingVuln.id);
+        } catch (refreshError) {
+          console.error('刷新漏洞详情失败:', refreshError);
+        }
+      }
+
+      Toast.success('状态变更成功');
+
+    } catch (error) {
+      console.error('状态变更失败:', error);
+      Toast.error('状态变更失败');
+    }
+  };
+
   // 查看漏洞详情
   const handleViewVuln = async (vuln: Vulnerability) => {
     setVulnDetailLoading(true);
+    setTimelineLoading(true);
     try {
       // 获取完整的漏洞详情
       const response = await vulnApi.getVuln(vuln.id);
       if (response.code === 200 && response.data) {
         setViewingVuln(response.data);
+
+        // 获取时间线数据
+        await refreshTimeline(vuln.id);
+
         setVulnDetailModalVisible(true);
       } else {
         Toast.error('获取漏洞详情失败');
@@ -364,6 +485,7 @@ export default function ProjectDetailPage() {
       Toast.error('获取漏洞详情失败');
     } finally {
       setVulnDetailLoading(false);
+      setTimelineLoading(false);
     }
   };
 
@@ -456,9 +578,61 @@ export default function ProjectDetailPage() {
       await vulnApi.updateVuln(vulnId, { status, ...extraData });
       Toast.success('更新漏洞状态成功');
       loadVulnerabilities();
+
+      // 如果当前正在查看这个漏洞的详情，需要刷新详情和时间线
+      if (viewingVuln && viewingVuln.id === vulnId) {
+        try {
+          // 重新获取漏洞详情
+          const response = await vulnApi.getVuln(vulnId);
+          if (response.code === 200 && response.data) {
+            setViewingVuln(response.data);
+          }
+
+          // 刷新时间线数据
+          await refreshTimeline(vulnId);
+        } catch (refreshError) {
+          console.error('刷新漏洞详情失败:', refreshError);
+        }
+      }
     } catch (error) {
       console.error('Error updating vulnerability status:', error);
       Toast.error('更新漏洞状态失败');
+    }
+  };
+
+  // 重新提交驳回的漏洞
+  const handleResubmitVuln = async (vuln: Vulnerability) => {
+    try {
+      // 重新提交时将状态改为未修复，并清除驳回相关信息
+      await vulnApi.updateVuln(vuln.id, {
+        status: 'unfixed',
+        reject_reason: '', // 清除驳回原因
+        resubmitted_at: new Date().toISOString(),
+        resubmitted_by: currentUser?.ID || currentUser?.id
+      });
+      Toast.success('漏洞重新提交成功');
+
+      // 刷新漏洞列表
+      loadVulnerabilities();
+
+      // 如果当前正在查看这个漏洞的详情，需要刷新详情和时间线
+      if (viewingVuln && viewingVuln.id === vuln.id) {
+        try {
+          // 重新获取漏洞详情
+          const response = await vulnApi.getVuln(vuln.id);
+          if (response.code === 200 && response.data) {
+            setViewingVuln(response.data);
+          }
+
+          // 刷新时间线数据
+          await refreshTimeline(vuln.id);
+        } catch (refreshError) {
+          console.error('刷新漏洞详情失败:', refreshError);
+        }
+      }
+    } catch (error) {
+      console.error('Error resubmitting vulnerability:', error);
+      Toast.error('重新提交漏洞失败');
     }
   };
 
@@ -688,14 +862,46 @@ export default function ProjectDetailPage() {
   const canEditVuln = (vuln: Vulnerability) => {
     // 管理员可以编辑任何状态的漏洞
     if (isAdmin) return true;
-    
+
     // 已完成的漏洞只有管理员才能编辑
     if (vuln.status === 'completed') return false;
-    
+
+    // 驳回状态的漏洞只有漏洞提交人（安全工程师）和管理员能编辑
+    if (vuln.status === 'rejected') {
+      const userId = currentUser?.id || currentUser?.ID;
+      return isSecurityEngineer && vuln.reporter_id === userId;
+    }
+
     const userId = currentUser?.id || currentUser?.ID;
     if (isSecurityEngineer && vuln.reporter_id === userId && vuln.status === 'unfixed') return true;
     if (isDevEngineer && vuln.assignee_id === userId) return true;
     return false;
+  };
+
+  // 检查是否可以重新提交（驳回状态的漏洞）
+  const canResubmitVuln = (vuln: Vulnerability) => {
+    if (vuln.status !== 'rejected') return false;
+
+    // 管理员可以重新提交任何驳回的漏洞
+    if (isAdmin) return true;
+
+    // 漏洞提交人可以重新提交自己提交的驳回漏洞
+    const userId = currentUser?.id || currentUser?.ID;
+    return isSecurityEngineer && vuln.reporter_id === userId;
+  };
+
+  // 获取状态在时间线中的顺序
+  const getStatusOrder = (status: string): number => {
+    const statusOrder: { [key: string]: number } = {
+      'unfixed': 1,
+      'fixing': 2,
+      'fixed': 3,
+      'rejected': 1, // 驳回状态回到起点
+      'retesting': 4,
+      'completed': 5,
+      'ignored': 0
+    };
+    return statusOrder[status] || 0;
   };
 
   const canDeleteVuln = (vuln: Vulnerability) => {
@@ -859,7 +1065,25 @@ export default function ProjectDetailPage() {
               size="small"
               onClick={() => handleEditVuln(record)}
             >
-              编辑
+              {isDevEngineer ? '状态变更' : (record.status === 'rejected' ? '重新编辑' : '编辑')}
+            </Button>
+          )}
+
+          {canResubmitVuln(record) && (
+            <Button
+              theme="borderless"
+              type="primary"
+              icon={<IconRefresh />}
+              size="small"
+              onClick={() => {
+                Modal.confirm({
+                  title: '重新提交漏洞',
+                  content: `确定要重新提交漏洞"${record.title}"吗？重新提交后漏洞状态将变为未修复。`,
+                  onOk: () => handleResubmitVuln(record)
+                });
+              }}
+            >
+              重新提交
             </Button>
           )}
           
@@ -1135,6 +1359,28 @@ export default function ProjectDetailPage() {
 
   return (
     <div style={{ padding: '24px' }}>
+      {/* 时间线滚动条样式 */}
+      <style jsx>{`
+        .timeline-container::-webkit-scrollbar {
+          height: 8px;
+        }
+        .timeline-container::-webkit-scrollbar-track {
+          background: #f1f1f1;
+          border-radius: 4px;
+        }
+        .timeline-container::-webkit-scrollbar-thumb {
+          background: #c1c1c1;
+          border-radius: 4px;
+        }
+        .timeline-container::-webkit-scrollbar-thumb:hover {
+          background: #a8a8a8;
+        }
+        .timeline-container {
+          scrollbar-width: thin;
+          scrollbar-color: #c1c1c1 #f1f1f1;
+        }
+      `}</style>
+
       {/* 项目基本信息 */}
       <Card style={{ marginBottom: '24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -1666,52 +1912,244 @@ export default function ProjectDetailPage() {
               </div>
             </div>
 
-            {/* 时间信息 */}
+            {/* 处理时间线 */}
             <div style={{ marginBottom: '24px' }}>
-              <Title heading={5} style={{ marginBottom: '16px' }}>时间信息</Title>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <Text type="secondary">提交时间：</Text>
-                  <Text>{new Date(viewingVuln.submitted_at).toLocaleString()}</Text>
-                </div>
-                {viewingVuln.assigned_at && (
-                  <div>
-                    <Text type="secondary">分配时间：</Text>
-                    <Text>{new Date(viewingVuln.assigned_at).toLocaleString()}</Text>
-                  </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <Title heading={5} style={{ margin: 0 }}>处理时间线</Title>
+                {vulnTimeline.length > 3 && (
+                  <Text type="tertiary" size="small">
+                    拖动查看更多 →
+                  </Text>
                 )}
-                {viewingVuln.fix_started_at && (
-                  <div>
-                    <Text type="secondary">开始修复时间：</Text>
-                    <Text>{new Date(viewingVuln.fix_started_at).toLocaleString()}</Text>
+              </div>
+              <div style={{
+                padding: '16px',
+                border: '1px solid var(--semi-color-border)',
+                borderRadius: '8px',
+                backgroundColor: 'var(--semi-color-bg-0)'
+              }}>
+                {timelineLoading ? (
+                  <div style={{ textAlign: 'center', padding: '20px' }}>
+                    <Spin />
+                    <Text type="secondary" style={{ marginLeft: '8px' }}>加载时间线...</Text>
                   </div>
-                )}
-                {viewingVuln.fixed_at && (
-                  <div>
-                    <Text type="secondary">修复完成时间：</Text>
-                    <Text>{new Date(viewingVuln.fixed_at).toLocaleString()}</Text>
+                ) : vulnTimeline.length > 0 ? (
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'row',
+                    alignItems: 'flex-start',
+                    gap: '12px',
+                    position: 'relative',
+                    overflowX: 'auto',
+                    overflowY: 'hidden',
+                    paddingBottom: '8px',
+                    scrollBehavior: 'smooth',
+                    cursor: 'grab',
+                    userSelect: 'none'
+                  }}
+                  onMouseDown={(e) => {
+                    const container = e.currentTarget;
+                    const startX = e.pageX - container.offsetLeft;
+                    const scrollLeft = container.scrollLeft;
+
+                    const handleMouseMove = (e: MouseEvent) => {
+                      const x = e.pageX - container.offsetLeft;
+                      const walk = (x - startX) * 2; // 调整拖动速度
+                      container.scrollLeft = scrollLeft - walk;
+                      container.style.cursor = 'grabbing';
+                    };
+
+                    const handleMouseUp = () => {
+                      container.style.cursor = 'grab';
+                      document.removeEventListener('mousemove', handleMouseMove);
+                      document.removeEventListener('mouseup', handleMouseUp);
+                    };
+
+                    document.addEventListener('mousemove', handleMouseMove);
+                    document.addEventListener('mouseup', handleMouseUp);
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.cursor = 'grab';
+                  }}
+                  onTouchStart={(e) => {
+                    const container = e.currentTarget;
+                    const touch = e.touches[0];
+                    const startX = touch.pageX;
+                    const scrollLeft = container.scrollLeft;
+
+                    const handleTouchMove = (e: TouchEvent) => {
+                      e.preventDefault();
+                      const touch = e.touches[0];
+                      const x = touch.pageX;
+                      const walk = (startX - x) * 2; // 调整拖动速度
+                      container.scrollLeft = scrollLeft + walk;
+                    };
+
+                    const handleTouchEnd = () => {
+                      document.removeEventListener('touchmove', handleTouchMove);
+                      document.removeEventListener('touchend', handleTouchEnd);
+                    };
+
+                    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+                    document.addEventListener('touchend', handleTouchEnd);
+                  }}
+                  className="timeline-container"
+                  style={{
+                    ...{
+                      display: 'flex',
+                      flexDirection: 'row',
+                      alignItems: 'flex-start',
+                      gap: '12px',
+                      position: 'relative',
+                      overflowX: 'auto',
+                      overflowY: 'hidden',
+                      paddingBottom: '8px',
+                      scrollBehavior: 'smooth',
+                      cursor: 'grab',
+                      userSelect: 'none'
+                    },
+                    // 自定义滚动条样式
+                    WebkitOverflowScrolling: 'touch',
+                  }}>
+                    {vulnTimeline.map((timeline, index) => {
+                      // 根据操作类型设置颜色和标签
+                      const getTimelineStyle = (action: string) => {
+                        switch (action) {
+                          case 'created':
+                            return { color: '#1890ff', label: '创建' };
+                          case 'assigned':
+                            return { color: '#fa8c16', label: '分配' };
+                          case 'unassigned':
+                            return { color: '#8c8c8c', label: '取消分配' };
+                          case 'updated':
+                            return { color: '#52c41a', label: '更新' };
+                          case 'status_changed':
+                            return { color: '#722ed1', label: '状态变更' };
+                          case 'deleted':
+                            return { color: '#ff4d4f', label: '删除' };
+                          default:
+                            return { color: '#8c8c8c', label: action };
+                        }
+                      };
+
+                      const style = getTimelineStyle(timeline.action);
+
+                      return (
+                        <div key={timeline.id} style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          flexShrink: 0  // 防止节点被压缩
+                        }}>
+                          {/* 连接线 */}
+                          {index > 0 && (
+                            <div style={{
+                              width: '20px',
+                              height: '2px',
+                              backgroundColor: '#52c41a',
+                              marginLeft: '-8px',
+                              marginRight: '-8px'
+                            }} />
+                          )}
+
+                          {/* 时间线节点 */}
+                          <div style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            minWidth: '120px',
+                            padding: '8px',
+                            borderRadius: '6px',
+                            backgroundColor: 'var(--semi-color-success-light-default)',
+                            border: `1px solid var(--semi-color-success)`,
+                            position: 'relative'
+                          }}>
+                            {/* 状态圆点 */}
+                            <div style={{
+                              width: '10px',
+                              height: '10px',
+                              borderRadius: '50%',
+                              backgroundColor: style.color,
+                              marginBottom: '4px'
+                            }} />
+
+                            {/* 操作标签 */}
+                            <Text size="small" strong style={{
+                              marginBottom: '2px',
+                              color: 'var(--semi-color-text-0)'
+                            }}>
+                              {style.label}
+                            </Text>
+
+                            {/* 描述信息 */}
+                            <Text size="small" type="secondary" style={{
+                              textAlign: 'center',
+                              lineHeight: '1.2',
+                              marginBottom: '2px',
+                              fontSize: '11px'
+                            }}>
+                              {timeline.description}
+                            </Text>
+
+                            {/* 时间信息 */}
+                            <Text size="small" type="tertiary" style={{
+                              textAlign: 'center',
+                              lineHeight: '1.2',
+                              marginBottom: '2px'
+                            }}>
+                              {new Date(timeline.created_at).toLocaleDateString('zh-CN', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </Text>
+
+                            {/* 操作人信息 */}
+                            {timeline.user && (
+                              <Text size="small" type="secondary" style={{
+                                textAlign: 'center',
+                                fontSize: '11px'
+                              }}>
+                                {timeline.user.real_name || timeline.user.username}
+                              </Text>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                )}
-                {viewingVuln.retest_at && (
-                  <div>
-                    <Text type="secondary">复测时间：</Text>
-                    <Text>{new Date(viewingVuln.retest_at).toLocaleString()}</Text>
-                  </div>
-                )}
-                {viewingVuln.completed_at && (
-                  <div>
-                    <Text type="secondary">完成时间：</Text>
-                    <Text>{new Date(viewingVuln.completed_at).toLocaleString()}</Text>
-                  </div>
-                )}
-                {viewingVuln.fix_deadline && (
-                  <div>
-                    <Text type="secondary">修复期限：</Text>
-                    <Text>{new Date(viewingVuln.fix_deadline).toLocaleDateString()}</Text>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '20px' }}>
+                    <Text type="secondary">暂无时间线记录</Text>
                   </div>
                 )}
               </div>
             </div>
+
+            {/* 修复期限信息 */}
+            {viewingVuln.fix_deadline && (
+              <div style={{
+                marginBottom: '24px',
+                padding: '12px',
+                border: `1px solid ${new Date(viewingVuln.fix_deadline) < new Date() ? '#ff4d4f' : '#d9d9d9'}`,
+                borderRadius: '8px',
+                backgroundColor: new Date(viewingVuln.fix_deadline) < new Date() ? '#fff2f0' : '#fafafa'
+              }}>
+                <Text type="secondary">修复期限：</Text>
+                <Text style={{
+                  color: new Date(viewingVuln.fix_deadline) < new Date() ? '#ff4d4f' : 'inherit',
+                  marginLeft: '8px'
+                }}>
+                  {new Date(viewingVuln.fix_deadline).toLocaleDateString('zh-CN')}
+                </Text>
+                {new Date(viewingVuln.fix_deadline) < new Date() && (
+                  <Tag color="red" size="small" style={{ marginLeft: '8px' }}>已过期</Tag>
+                )}
+              </div>
+            )}
+
+
 
             {/* 详细描述 */}
             {viewingVuln.description && (
@@ -1818,7 +2256,7 @@ export default function ProjectDetailPage() {
             label="资产类型"
             placeholder="请选择资产类型"
             rules={[{ required: true, message: '请选择资产类型' }]}
-            onChange={(value) => setSelectedAssetType(value)}
+            onChange={(value) => setSelectedAssetType(value as string)}
           >
             {ASSET_TYPES.map(type => (
               <Select.Option key={type.value} value={type.value}>
@@ -2079,6 +2517,286 @@ export default function ProjectDetailPage() {
             />
           </div>
         </div>
+      </Modal>
+
+      {/* 状态变更弹窗（研发工程师专用） */}
+      <Modal
+        title="漏洞状态变更"
+        visible={statusChangeModalVisible}
+        onCancel={() => {
+          setStatusChangeModalVisible(false);
+          setChangingVuln(null);
+          setSelectedStatus('');
+          if (statusChangeFormRef) {
+            statusChangeFormRef.reset();
+          }
+        }}
+        footer={null}
+        width={600}
+        maskClosable={false}
+      >
+        {changingVuln && (
+          <div>
+            {/* 漏洞基本信息展示 */}
+            <div style={{
+              marginBottom: '24px',
+              padding: '16px',
+              backgroundColor: '#fafafa',
+              borderRadius: '8px'
+            }}>
+              <Title heading={6} style={{ marginBottom: '12px' }}>漏洞信息</Title>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <Text type="secondary" size="small">漏洞标题：</Text>
+                  <div><Text strong>{changingVuln.title}</Text></div>
+                </div>
+                <div>
+                  <Text type="secondary" size="small">漏洞类型：</Text>
+                  <div><Text>{changingVuln.vuln_type}</Text></div>
+                </div>
+                <div>
+                  <Text type="secondary" size="small">漏洞等级：</Text>
+                  <div>
+                    <Tag color={getSeverityColor(changingVuln.severity)}>
+                      {VULN_SEVERITIES.find(s => s.value === changingVuln.severity)?.label || changingVuln.severity}
+                    </Tag>
+                  </div>
+                </div>
+                <div>
+                  <Text type="secondary" size="small">所属资产：</Text>
+                  <div><Text>{changingVuln.asset ? `${changingVuln.asset.name} (${changingVuln.asset.ip})` : '未知'}</Text></div>
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <Text type="secondary" size="small">漏洞提交人：</Text>
+                  <div><Text>{changingVuln.reporter ? changingVuln.reporter.real_name : '未知'}</Text></div>
+                </div>
+              </div>
+            </div>
+
+            {/* 当前驳回信息（如果存在） */}
+            {changingVuln.status === 'rejected' && changingVuln.reject_reason && (
+              <div style={{
+                marginBottom: '24px',
+                padding: '16px',
+                backgroundColor: '#fff2f0',
+                border: '1px solid #ffccc7',
+                borderRadius: '8px'
+              }}>
+                <Title heading={6} style={{ marginBottom: '12px', color: '#cf1322' }}>当前驳回信息</Title>
+                <div style={{ marginBottom: '8px' }}>
+                  <Text type="secondary">驳回人：</Text>
+                  <Text strong>{changingVuln.rejector ? changingVuln.rejector.real_name : '未知'}</Text>
+                </div>
+                <div style={{ marginBottom: '8px' }}>
+                  <Text type="secondary">驳回时间：</Text>
+                  <Text>{changingVuln.rejected_at ? new Date(changingVuln.rejected_at).toLocaleString() : '未知'}</Text>
+                </div>
+                <div>
+                  <Text type="secondary">驳回原因：</Text>
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '12px',
+                    backgroundColor: 'white',
+                    border: '1px solid #f0f0f0',
+                    borderRadius: '6px',
+                    whiteSpace: 'pre-wrap'
+                  }}>
+                    <Text>{changingVuln.reject_reason}</Text>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 状态变更表单 */}
+            <Form
+              getFormApi={(api) => setStatusChangeFormRef(api)}
+              onSubmit={handleSaveStatusChange}
+              onSubmitFail={(errors) => {
+                console.error('状态变更表单验证失败:', errors);
+                Toast.error('请检查表单输入');
+              }}
+              labelPosition="left"
+              labelAlign="left"
+              labelWidth={100}
+            >
+              <div style={{ marginBottom: '16px' }}>
+                <div style={{
+                  marginBottom: '8px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}>
+                  <span style={{ color: '#f56565', marginRight: '4px' }}>*</span>
+                  变更状态
+                </div>
+
+                {/* 状态选择 */}
+                <div style={{
+                  padding: '16px',
+                  border: '1px solid var(--semi-color-border)',
+                  borderRadius: '8px',
+                  backgroundColor: 'var(--semi-color-bg-0)'
+                }}>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                    gap: '12px'
+                  }}>
+                    {[
+                      {
+                        value: 'unfixed',
+                        label: '未修复',
+                        color: '#ff4d4f',
+                        description: '漏洞尚未开始修复',
+                        time: changingVuln.submitted_at,
+                        timeLabel: '提交时间'
+                      },
+                      {
+                        value: 'fixing',
+                        label: '修复中',
+                        color: '#fa8c16',
+                        description: '正在修复漏洞',
+                        time: changingVuln.fix_started_at,
+                        timeLabel: '开始修复'
+                      },
+                      {
+                        value: 'fixed',
+                        label: '已修复',
+                        color: '#52c41a',
+                        description: '漏洞已修复完成，等待复测',
+                        time: changingVuln.fixed_at,
+                        timeLabel: '修复完成'
+                      },
+                      {
+                        value: 'rejected',
+                        label: '驳回',
+                        color: '#722ed1',
+                        description: '驳回此漏洞',
+                        time: changingVuln.rejected_at,
+                        timeLabel: '驳回时间'
+                      }
+                    ].map((status) => {
+                      const isCompleted = getStatusOrder(changingVuln.status) >= getStatusOrder(status.value);
+                      const isSelected = selectedStatus === status.value;
+                      const isCurrentStatus = changingVuln.status === status.value;
+
+                      return (
+                        <div
+                          key={status.value}
+                          style={{
+                            padding: '12px',
+                            border: `2px solid ${isSelected ? 'var(--semi-color-primary)' :
+                                                isCurrentStatus ? '#faad14' :
+                                                'var(--semi-color-border)'}`,
+                            borderRadius: '8px',
+                            backgroundColor: isSelected ? 'var(--semi-color-primary-light-default)' :
+                                           isCurrentStatus ? 'var(--semi-color-warning-light-default)' :
+                                           'white',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            position: 'relative'
+                          }}
+                          onClick={() => {
+                            setSelectedStatus(status.value);
+                            if (statusChangeFormRef) {
+                              statusChangeFormRef.setValue('status', status.value);
+                            }
+                          }}
+                        >
+                          {/* 状态指示器 */}
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            marginBottom: '8px'
+                          }}>
+                            <div style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              backgroundColor: isCompleted ? status.color : '#d9d9d9',
+                              marginRight: '8px'
+                            }} />
+                            <Text strong style={{ fontSize: '14px' }}>
+                              {status.label}
+                            </Text>
+                            {isCurrentStatus && (
+                              <Tag color="orange" size="small" style={{ marginLeft: '8px' }}>
+                                当前
+                              </Tag>
+                            )}
+                            {isSelected && (
+                              <Tag color="blue" size="small" style={{ marginLeft: '8px' }}>
+                                已选择
+                              </Tag>
+                            )}
+                          </div>
+
+                          <Text size="small" type="secondary" style={{
+                            display: 'block',
+                            marginBottom: '6px',
+                            lineHeight: '1.4'
+                          }}>
+                            {status.description}
+                          </Text>
+
+                          {status.time && (
+                            <Text size="small" type="tertiary" style={{
+                              fontSize: '11px',
+                              lineHeight: '1.2'
+                            }}>
+                              {status.timeLabel}: {new Date(status.time).toLocaleDateString('zh-CN', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </Text>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <Form.Input
+                  field="status"
+                  style={{ display: 'none' }}
+                  rules={[{ required: true, message: '请选择新状态' }]}
+                />
+              </div>
+
+              <Form.TextArea
+                field="comment"
+                label="批注"
+                placeholder="请输入批注（驳回时必填）"
+                autosize={{ minRows: 3, maxRows: 6 }}
+                rules={[
+                  {
+                    validator: (rule, value, callback) => {
+                      if (selectedStatus === 'rejected' && (!value || !value.trim())) {
+                        callback('驳回漏洞时必须填写批注');
+                        return false;
+                      } else {
+                        callback();
+                        return true;
+                      }
+                    }
+                  }
+                ]}
+              />
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                <Button onClick={() => setStatusChangeModalVisible(false)}>
+                  取消
+                </Button>
+                <Button theme="solid" type="primary" htmlType="submit">
+                  确认变更
+                </Button>
+              </div>
+            </Form>
+          </div>
+        )}
       </Modal>
 
     </div>

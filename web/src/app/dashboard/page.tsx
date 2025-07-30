@@ -145,6 +145,8 @@ export default function DashboardPage() {
         return 'green';
       case 'ignored':
         return 'gray';
+      case 'rejected':
+        return 'purple';
       default:
         return 'gray';
     }
@@ -165,6 +167,8 @@ export default function DashboardPage() {
         return '已完成';
       case 'ignored':
         return '已忽略';
+      case 'rejected':
+        return '驳回';
       default:
         return status;
     }

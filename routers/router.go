@@ -134,9 +134,10 @@ func InitRouter(r *gin.Engine) *gin.Engine {
 		vulnViewAPI := vulnAPI.Group("")
 		vulnViewAPI.Use(middleware.PermissionMiddleware("vuln:view"))
 		{
-			vulnViewAPI.GET("", api.GetVulnList)        // 获取漏洞列表
-			vulnViewAPI.GET("/stats", api.GetVulnStats) // 获取漏洞统计信息
-			vulnViewAPI.GET("/:id", api.GetVuln)        // 获取漏洞详情
+			vulnViewAPI.GET("", api.GetVulnList)            // 获取漏洞列表
+			vulnViewAPI.GET("/stats", api.GetVulnStats)     // 获取漏洞统计信息
+			vulnViewAPI.GET("/:id", api.GetVuln)            // 获取漏洞详情
+			vulnViewAPI.GET("/:id/timeline", api.GetVulnTimeline) // 获取漏洞时间线
 		}
 
 		// 漏洞创建权限组 - 可以创建新漏洞

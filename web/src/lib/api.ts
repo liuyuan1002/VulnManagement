@@ -762,11 +762,29 @@ export interface Vulnerability {
   completed_at?: string;
   ignored_at?: string;
   ignore_reason?: string;
+  rejected_at?: string;
+  rejected_by?: number;
+  rejector?: User;
+  reject_reason?: string;
+  resubmitted_at?: string;
+  resubmitted_by?: number;
+  resubmitter?: User;
   fix_deadline?: string;
   retest_result?: string;
   tags?: string;
   created_at: string;
   updated_at: string;
+}
+
+// 漏洞时间线类型定义
+export interface VulnTimeline {
+  id: number;
+  vuln_id: number;
+  action: string;
+  description: string;
+  user_id: number;
+  user: User;
+  created_at: string;
 }
 
 // 项目类型枚举
@@ -823,6 +841,7 @@ export const VULN_STATUSES = [
   { value: 'retesting', label: '复测中', color: 'blue' },
   { value: 'completed', label: '已完成', color: 'light-green' },
   { value: 'ignored', label: '已忽略', color: 'grey' },
+  { value: 'rejected', label: '驳回', color: 'purple' },
 ];
 
 // 漏洞类型枚举
@@ -909,6 +928,10 @@ export interface VulnUpdateRequest {
   status?: string;
   ignore_reason?: string;
   retest_result?: string;
+  reject_reason?: string;
+  comment?: string;
+  resubmitted_at?: string;
+  resubmitted_by?: number;
 }
 
 // 资产创建请求类型
@@ -991,6 +1014,12 @@ export const vulnApi = {
   // 复测漏洞
   retestVuln: async (id: number, result?: string): Promise<ApiResponse> => {
     const response = await api.put(`/vulns/${id}/retest`, { retest_result: result });
+    return response.data;
+  },
+
+  // 获取漏洞时间线
+  getVulnTimeline: async (id: number): Promise<ApiResponse<VulnTimeline[]>> => {
+    const response = await api.get(`/vulns/${id}/timeline`);
     return response.data;
   },
 
