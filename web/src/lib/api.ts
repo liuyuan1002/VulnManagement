@@ -158,6 +158,12 @@ export const systemApi = {
     return response.data;
   },
 
+  // 获取上传配置
+  getUploadConfig: async (): Promise<ApiResponse<SystemConfig[]>> => {
+    const response = await api.get('/system/configs?group=upload&public=true');
+    return response.data;
+  },
+
   // 更新系统配置
   updateConfig: async (key: string, data: ConfigUpdateRequest): Promise<ApiResponse> => {
     const response = await api.put(`/system/configs/${key}`, data);
@@ -493,6 +499,19 @@ export const userApi = {
     const response = await api.get('/password/policy');
     return response.data;
   },
+
+  // 上传漏洞图片
+  uploadVulnImage: async (file: File): Promise<ApiResponse<{ image_url: string }>> => {
+    const formData = new FormData();
+    formData.append('image', file);
+
+    const response = await api.post('/upload/vuln-image', formData, {
+      headers: {
+        'Content-Type': undefined, // 让axios自动设置multipart/form-data
+      },
+    });
+    return response.data;
+  },
 };
 
 // 周报API
@@ -555,21 +574,6 @@ export const weeklyReportApi = {
     const response = await api.post('/system/weekly-report/generate');
     return response.data;
   },
-
-  // 上传漏洞图片
-  uploadVulnImage: async (file: File): Promise<ApiResponse<{ image_url: string }>> => {
-    const formData = new FormData();
-    formData.append('image', file);
-    
-    const response = await api.post('/upload/vuln-image', formData, {
-      headers: {
-        'Content-Type': undefined, // 让axios自动设置multipart/form-data
-      },
-    });
-    return response.data;
-  },
-
- 
 };
 
 // 项目类型定义

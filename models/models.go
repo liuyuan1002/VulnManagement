@@ -273,7 +273,7 @@ func InitDefaultData() error {
 		{Key: "password.require_number", Value: "true", Type: "bool", Group: "password", Description: "密码需要包含数字", IsPublic: false},
 		{Key: "password.require_special", Value: "false", Type: "bool", Group: "password", Description: "密码需要包含特殊字符", IsPublic: false},
 		{Key: "upload.max_size", Value: "10", Type: "int", Group: "upload", Description: "文件上传最大大小(MB)", IsPublic: true},
-		{Key: "upload.allowed_types", Value: "jpg,jpeg,png,gif,pdf,doc,docx,xls,xlsx,zip,rar", Type: "string", Group: "upload", Description: "允许上传的文件类型", IsPublic: true},
+		{Key: "upload.allowed_types", Value: "jpg,jpeg,png", Type: "string", Group: "upload", Description: "允许上传的文件类型", IsPublic: true},
 	}
 
 	// 遍历配置列表，检查每个配置是否已存在

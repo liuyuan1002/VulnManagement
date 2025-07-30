@@ -5,6 +5,8 @@ package api
 import (
 	"fmt"
 	"net/http" // 导入HTTP包，用于HTTP状态码
+	"path/filepath"
+	"strconv"
 	"strings"
 	"vulnmain/services" // 导入服务层包，使用认证服务
 	"vulnmain/utils"    // 导入工具包，用于密码验证
@@ -256,21 +258,25 @@ func UploadVulnImage(c *gin.Context) {
 		return
 	}
 
-	// 检查文件大小 (5MB)
-	if file.Size > 5*1024*1024 {
+	// 检查文件大小 - 使用系统配置
+	maxSize, err := getMaxUploadSize()
+	if err != nil {
+		maxSize = 5 // 默认5MB
+	}
+	maxSizeBytes := int64(maxSize) * 1024 * 1024
+	if file.Size > maxSizeBytes {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code": 400,
-			"msg":  "文件大小不能超过5MB",
+			"msg":  fmt.Sprintf("文件大小不能超过%dMB", maxSize),
 		})
 		return
 	}
 
-	// 检查文件类型
-	contentType := file.Header.Get("Content-Type")
-	if !isValidImageType(contentType) {
+	// 检查文件类型 - 使用系统配置
+	if !isValidImageTypeByConfig(file.Filename, file.Header.Get("Content-Type")) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"code": 400,
-			"msg":  "文件格式不支持，请上传JPG、PNG、GIF、WebP格式的图片",
+			"msg":  "文件格式不支持，请检查系统设置中允许的文件类型",
 		})
 		return
 	}
@@ -358,4 +364,74 @@ func GetPasswordPolicy(c *gin.Context) {
 			"requirements": requirements,
 		},
 	})
+}
+
+// getMaxUploadSize 获取系统配置的最大上传文件大小(MB)
+func getMaxUploadSize() (int, error) {
+	systemService := &services.SystemService{}
+	config, err := systemService.GetSystemConfig("upload.max_size")
+	if err != nil {
+		return 5, err // 默认5MB
+	}
+
+	size, err := strconv.Atoi(config.Value)
+	if err != nil {
+		return 5, err // 默认5MB
+	}
+
+	return size, nil
+}
+
+// getAllowedFileTypes 获取系统配置的允许文件类型
+func getAllowedFileTypes() ([]string, error) {
+	systemService := &services.SystemService{}
+	config, err := systemService.GetSystemConfig("upload.allowed_types")
+	if err != nil {
+		return []string{"jpg", "jpeg", "png", "gif"}, err // 默认图片类型
+	}
+
+	types := strings.Split(config.Value, ",")
+	var cleanTypes []string
+	for _, t := range types {
+		cleanTypes = append(cleanTypes, strings.TrimSpace(strings.ToLower(t)))
+	}
+
+	return cleanTypes, nil
+}
+
+// isValidImageTypeByConfig 根据系统配置检查文件类型是否有效
+func isValidImageTypeByConfig(filename, contentType string) bool {
+	// 获取允许的文件类型
+	allowedTypes, err := getAllowedFileTypes()
+	if err != nil {
+		// 如果获取配置失败，使用默认的图片类型检查
+		return isValidImageType(contentType)
+	}
+
+	// 获取文件扩展名
+	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(filename), "."))
+
+	// 检查扩展名是否在允许的类型中
+	for _, allowedType := range allowedTypes {
+		if ext == allowedType {
+			// 对于图片文件，还需要检查Content-Type
+			if isImageExtension(ext) {
+				return isValidImageType(contentType)
+			}
+			return true
+		}
+	}
+
+	return false
+}
+
+// isImageExtension 检查扩展名是否为图片类型
+func isImageExtension(ext string) bool {
+	imageExts := []string{"jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"}
+	for _, imageExt := range imageExts {
+		if ext == imageExt {
+			return true
+		}
+	}
+	return false
 }

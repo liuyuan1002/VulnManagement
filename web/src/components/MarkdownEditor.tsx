@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import { Toast } from '@douyinfe/semi-ui';
-import { userApi } from '@/lib/api';
+import { userApi, systemApi } from '@/lib/api';
 import '@uiw/react-md-editor/markdown-editor.css';
 
 interface MarkdownEditorProps {
@@ -22,7 +22,48 @@ export default function MarkdownEditor({
   disabled = false
 }: MarkdownEditorProps) {
   const [uploading, setUploading] = useState(false);
+  const [allowedTypes, setAllowedTypes] = useState<string[]>(['jpg', 'jpeg', 'png', 'gif']); // 默认允许的图片类型
+  const [maxSize, setMaxSize] = useState<number>(5); // 默认5MB
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 获取系统上传配置
+  useEffect(() => {
+    const fetchUploadConfig = async () => {
+      try {
+        const response = await systemApi.getUploadConfig();
+        if (response.code === 200 && response.data) {
+          const configs = response.data;
+
+          // 查找允许的文件类型配置
+          const allowedTypesConfig = configs.find(config => config.key === 'upload.allowed_types');
+          if (allowedTypesConfig && allowedTypesConfig.value) {
+            const types = allowedTypesConfig.value.split(',').map(type => type.trim().toLowerCase());
+            // 只保留图片类型
+            const imageTypes = types.filter(type =>
+              ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'].includes(type)
+            );
+            if (imageTypes.length > 0) {
+              setAllowedTypes(imageTypes);
+            }
+          }
+
+          // 查找文件大小限制配置
+          const maxSizeConfig = configs.find(config => config.key === 'upload.max_size');
+          if (maxSizeConfig && maxSizeConfig.value) {
+            const size = parseInt(maxSizeConfig.value);
+            if (!isNaN(size) && size > 0) {
+              setMaxSize(size);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('获取上传配置失败:', error);
+        // 使用默认配置
+      }
+    };
+
+    fetchUploadConfig();
+  }, []);
 
   // 图片上传处理
   const handleImageUpload = async (file: File): Promise<string> => {
@@ -52,15 +93,26 @@ export default function MarkdownEditor({
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // 检查文件类型
+    // 获取文件扩展名
+    const fileName = file.name.toLowerCase();
+    const fileExtension = fileName.split('.').pop() || '';
+
+    // 检查文件类型 - 使用系统配置的允许类型
+    if (!allowedTypes.includes(fileExtension)) {
+      Toast.error(`不支持的文件格式，请上传以下格式的图片：${allowedTypes.join(', ')}`);
+      return;
+    }
+
+    // 检查文件是否为图片类型
     if (!file.type.startsWith('image/')) {
       Toast.error('请选择图片文件');
       return;
     }
 
-    // 检查文件大小 (5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      Toast.error('图片大小不能超过5MB');
+    // 检查文件大小 - 使用系统配置的大小限制
+    const maxSizeBytes = maxSize * 1024 * 1024;
+    if (file.size > maxSizeBytes) {
+      Toast.error(`图片大小不能超过${maxSize}MB`);
       return;
     }
 
@@ -103,7 +155,7 @@ export default function MarkdownEditor({
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept={allowedTypes.map(type => `.${type}`).join(',')}
         style={{ display: 'none' }}
         onChange={handleFileSelect}
         disabled={uploading || disabled}
