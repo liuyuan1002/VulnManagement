@@ -65,6 +65,13 @@ const CONFIG_GROUPS = {
     icon: <IconUpload />,
     key: 'upload'
   },
+  //  outerConfig: {
+  //   title: '外部配置',
+  //   description: '外部系统集成和配置',
+  //   icon: <IconUpload />,
+  //   key: 'outerConfig'
+  // },
+  
 };
 
 export default function SettingsPage() {
@@ -579,7 +586,15 @@ export default function SettingsPage() {
               </TabPane>
             );
           })}
+  <TabPane tab={
+            <span>
+              <IconCalendar style={{ marginRight: '8px' }} />
+              外联配置
+            </span>
+          } itemKey="outerConfig">
+            1111222sss11111
 
+  </TabPane>
           {/* 周报管理Tab */}
           <TabPane tab={
             <span>

@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // API 基础URL - 可以通过环境变量配置
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5001/api';
 
 // 后端基础URL（用于静态文件访问）
 const BACKEND_BASE_URL = API_BASE_URL.replace('/api', '');
