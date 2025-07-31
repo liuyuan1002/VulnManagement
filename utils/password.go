@@ -25,9 +25,9 @@ func GetPasswordPolicy() (*PasswordPolicy, error) {
 	
 	policy := &PasswordPolicy{
 		MinLength:        8,     // 默认最小长度
-		RequireUppercase: true,  // 默认需要大写字母
-		RequireLowercase: true,  // 默认需要小写字母
-		RequireNumber:    true,  // 默认需要数字
+		RequireUppercase: false, // 默认不需要大写字母
+		RequireLowercase: false, // 默认不需要小写字母
+		RequireNumber:    false, // 默认不需要数字
 		RequireSpecial:   false, // 默认不需要特殊字符
 	}
 
