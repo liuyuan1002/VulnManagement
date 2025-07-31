@@ -29,6 +29,7 @@ import {
   IconUser
 } from '@douyinfe/semi-icons';
 import { systemApi, SystemConfig, ConfigUpdateRequest, weeklyReportApi, resolveImageUrl } from '@/lib/api';
+import { notifyPasswordPolicyUpdated } from '@/utils/password';
 
 const { Title, Text } = Typography;
 
@@ -188,9 +189,14 @@ export default function SettingsPage() {
       });
 
       await Promise.all(updatePromises.filter(Boolean));
-      
+
       Toast.success('配置保存成功');
-      
+
+      // 如果更新的是密码策略，通知相关组件刷新
+      if (group === 'password') {
+        notifyPasswordPolicyUpdated();
+      }
+
       // 重新加载配置
       await loadConfigs();
       

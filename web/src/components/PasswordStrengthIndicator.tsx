@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Progress, Typography, List } from '@douyinfe/semi-ui';
 import { IconTick, IconClose } from '@douyinfe/semi-icons';
-import { validatePassword, getPasswordPolicy, getPasswordStrengthColor, getPasswordStrengthText } from '@/utils/password';
+import { validatePassword, getPasswordPolicy, getPasswordStrengthColor, getPasswordStrengthText, clearPasswordPolicyCache, PASSWORD_POLICY_UPDATED_EVENT } from '@/utils/password';
 import type { PasswordValidationResult } from '@/utils/password';
 
 const { Text } = Typography;
@@ -10,12 +10,14 @@ interface PasswordStrengthIndicatorProps {
   password: string;
   onValidationChange?: (result: PasswordValidationResult) => void;
   showRequirements?: boolean;
+  forceRefresh?: boolean; // 强制刷新密码策略
 }
 
 const PasswordStrengthIndicator: React.FC<PasswordStrengthIndicatorProps> = ({
   password,
   onValidationChange,
   showRequirements = true,
+  forceRefresh = false,
 }) => {
   const [validationResult, setValidationResult] = useState<PasswordValidationResult>({
     isValid: false,
@@ -29,7 +31,11 @@ const PasswordStrengthIndicator: React.FC<PasswordStrengthIndicatorProps> = ({
   useEffect(() => {
     const loadRequirements = async () => {
       try {
-        const { requirements: reqs } = await getPasswordPolicy();
+        // 如果需要强制刷新，先清除缓存
+        if (forceRefresh) {
+          clearPasswordPolicyCache();
+        }
+        const { requirements: reqs } = await getPasswordPolicy(forceRefresh);
         setRequirements(reqs);
       } catch (error) {
         console.error('加载密码要求失败:', error);
@@ -39,7 +45,19 @@ const PasswordStrengthIndicator: React.FC<PasswordStrengthIndicatorProps> = ({
     };
 
     loadRequirements();
-  }, []);
+
+    // 监听密码策略更新事件
+    const handlePolicyUpdate = () => {
+      setLoading(true);
+      loadRequirements();
+    };
+
+    window.addEventListener(PASSWORD_POLICY_UPDATED_EVENT, handlePolicyUpdate);
+
+    return () => {
+      window.removeEventListener(PASSWORD_POLICY_UPDATED_EVENT, handlePolicyUpdate);
+    };
+  }, [forceRefresh]);
 
   useEffect(() => {
     const validatePasswordAsync = async () => {

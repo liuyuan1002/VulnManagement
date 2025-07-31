@@ -1,6 +1,15 @@
 // 密码验证工具
 import { authApi } from '@/lib/api';
 
+// 密码策略更新事件
+export const PASSWORD_POLICY_UPDATED_EVENT = 'password-policy-updated';
+
+// 触发密码策略更新事件
+export const notifyPasswordPolicyUpdated = (): void => {
+  clearPasswordPolicyCache();
+  window.dispatchEvent(new CustomEvent(PASSWORD_POLICY_UPDATED_EVENT));
+};
+
 // 密码策略接口
 export interface PasswordPolicy {
   min_length: number;
@@ -21,10 +30,22 @@ export interface PasswordValidationResult {
 // 缓存密码策略
 let cachedPolicy: PasswordPolicy | null = null;
 let cachedRequirements: string[] | null = null;
+let cacheTimestamp: number = 0;
+const CACHE_DURATION = 30000; // 30秒缓存时间
+
+// 清除密码策略缓存
+export const clearPasswordPolicyCache = (): void => {
+  cachedPolicy = null;
+  cachedRequirements = null;
+  cacheTimestamp = 0;
+};
 
 // 获取密码策略
-export const getPasswordPolicy = async (): Promise<{ policy: PasswordPolicy; requirements: string[] }> => {
-  if (cachedPolicy && cachedRequirements) {
+export const getPasswordPolicy = async (forceRefresh: boolean = false): Promise<{ policy: PasswordPolicy; requirements: string[] }> => {
+  const now = Date.now();
+
+  // 如果不强制刷新且缓存有效，返回缓存数据
+  if (!forceRefresh && cachedPolicy && cachedRequirements && (now - cacheTimestamp) < CACHE_DURATION) {
     return { policy: cachedPolicy, requirements: cachedRequirements };
   }
 
@@ -33,26 +54,29 @@ export const getPasswordPolicy = async (): Promise<{ policy: PasswordPolicy; req
     if (response.code === 200) {
       cachedPolicy = response.data.policy;
       cachedRequirements = response.data.requirements;
+      cacheTimestamp = now;
       return { policy: cachedPolicy, requirements: cachedRequirements };
     }
   } catch (error) {
     console.error('获取密码策略失败:', error);
   }
 
-  // 返回默认策略
+  // 如果API调用失败但有缓存数据，使用缓存数据
+  if (cachedPolicy && cachedRequirements) {
+    return { policy: cachedPolicy, requirements: cachedRequirements };
+  }
+
+  // 返回最基本的默认策略（仅长度要求）
   const defaultPolicy: PasswordPolicy = {
     min_length: 8,
-    require_uppercase: true,
-    require_lowercase: true,
-    require_number: true,
+    require_uppercase: false,
+    require_lowercase: false,
+    require_number: false,
     require_special: false,
   };
 
   const defaultRequirements = [
     '密码长度至少 8 位',
-    '包含至少一个大写字母 (A-Z)',
-    '包含至少一个小写字母 (a-z)',
-    '包含至少一个数字 (0-9)',
   ];
 
   return { policy: defaultPolicy, requirements: defaultRequirements };
@@ -183,8 +207,4 @@ export const getPasswordStrengthText = (strength: 'weak' | 'medium' | 'strong'):
   }
 };
 
-// 清除缓存（用于系统设置更新后）
-export const clearPasswordPolicyCache = (): void => {
-  cachedPolicy = null;
-  cachedRequirements = null;
-};
+
