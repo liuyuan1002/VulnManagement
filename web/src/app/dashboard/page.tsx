@@ -516,6 +516,12 @@ export default function DashboardPage() {
                 dataIndex: 'submitted_at',
                 key: 'submitted_at',
                 render: (time: string) => new Date(time).toLocaleDateString('zh-CN')
+              },
+              {
+                title: '截止时间',
+                dataIndex: 'fix_deadline',
+                key: 'fix_deadline',
+                render: (time: string) => new Date(time).toLocaleDateString('zh-CN')
               }
             ]}
             dataSource={dashboardData.latest_vulns}
@@ -837,6 +843,12 @@ export default function DashboardPage() {
                 dataIndex: 'submitted_at',
                 key: 'submitted_at',
                 render: (time: string) => new Date(time).toLocaleDateString('zh-CN')
+              },
+              {
+                title: '截止时间',
+                dataIndex: 'fix_deadline',
+                key: 'fix_deadline',
+                render: (time: string) => new Date(time).toLocaleDateString('zh-CN')
               }
             ]}
             dataSource={dashboardData.latest_vulns}
@@ -1137,6 +1149,12 @@ export default function DashboardPage() {
                 title: '提交时间',
                 dataIndex: 'submitted_at',
                 key: 'submitted_at',
+                render: (time: string) => new Date(time).toLocaleDateString('zh-CN')
+              },
+              {
+                title: '截止时间',
+                dataIndex: 'fix_deadline',
+                key: 'fix_deadline',
                 render: (time: string) => new Date(time).toLocaleDateString('zh-CN')
               }
             ]}
