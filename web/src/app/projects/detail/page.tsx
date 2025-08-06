@@ -508,7 +508,10 @@ export default function ProjectDetailPage() {
         fix_suggestion: values.fix_suggestion,
         asset_id: values.asset_id,
         assignee_id: values.assignee_id,
-        fix_deadline: values.fix_deadline ? values.fix_deadline.toISOString().split('T')[0] : undefined,
+        fix_deadline: values.fix_deadline ? new Date(
+            values.fix_deadline.getTime() - 
+            (values.fix_deadline.getTimezoneOffset() * 60000)
+          ).toISOString().split('T')[0] : undefined,
         tags: values.tags,
       };
 

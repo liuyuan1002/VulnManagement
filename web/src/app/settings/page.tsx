@@ -65,6 +65,13 @@ const CONFIG_GROUPS = {
     icon: <IconUpload />,
     key: 'upload'
   },
+  //  outerConfig: {
+  //   title: '外部配置',
+  //   description: '外部系统集成和配置',
+  //   icon: <IconUpload />,
+  //   key: 'outerConfig'
+  // },
+  
 };
 
 export default function SettingsPage() {
@@ -312,7 +319,7 @@ export default function SettingsPage() {
     }
 
     return (
-      <Form
+      <Form<any>
         labelPosition="left"
         labelWidth="150px"
         onSubmit={(values) => saveConfigs(group, values)}
@@ -579,7 +586,95 @@ export default function SettingsPage() {
               </TabPane>
             );
           })}
-
+          {/* 外联配置Tab */}
+      <TabPane tab={
+            <span>
+              <IconCalendar style={{ marginRight: '8px' }} />
+              外联配置
+            </span>
+          } itemKey="outerConfig">
+                  <div style={{ padding: '20px 0' }}>
+                    <div style={{ marginBottom: '20px' }}>
+                      <Title heading={4} style={{ margin: '0 0 8px 0' }}>
+                        外联配置
+                      </Title>
+                      <Text type="secondary">第三方系统链接配置</Text>
+                    </div>
+                    <Card style={{ marginBottom: 24 }}>
+                      <Title heading={5}>资产同步配置</Title>
+                      <Text type="secondary">配置与外部资产管理系统的同步参数。</Text>
+                      <Form style={{ marginTop: 16 }}>
+                        <Form.Input
+                          field="asset_sync_url"
+                          label="资产同步API地址"
+                          placeholder="请输入资产同步API地址"
+                        />
+                        <Form.Input
+                          field="asset_sync_token"
+                          label="认证Token"
+                          placeholder="请输入认证Token"
+                          type="password"
+                        />
+                        <Form.InputNumber
+                          field="asset_sync_interval"
+                          label="同步间隔(分钟)"
+                          placeholder="请输入同步间隔"
+                          min={1}
+                        />
+                      </Form>
+                    </Card>
+                    <Card style={{ marginBottom: 24 }}>
+                      <Title heading={5}>用户同步配置</Title>
+                      <Text type="secondary">配置与外部用户管理系统（如LDAP、AD等）的同步参数。</Text>
+                      <Form style={{ marginTop: 16 }}>
+                        <Form.Input
+                          field="user_sync_url"
+                          label="用户同步API地址"
+                          placeholder="请输入用户同步API地址"
+                        />
+                        <Form.Input
+                          field="user_sync_username"
+                          label="用户名"
+                          placeholder="请输入用户名"
+                        />
+                        <Form.Input
+                          field="user_sync_password"
+                          label="密码"
+                          placeholder="请输入密码"
+                          type="password"
+                        />
+                        <Form.Switch
+                          field="user_sync_enabled"
+                          label="启用自动同步"
+                          initValue={false}
+                        />
+                      </Form>
+                    </Card>
+                    <Card>
+                      <Title heading={5}>流程同步推送配置</Title>
+                      <Text type="secondary">配置与外部流程系统（如工单、审批等）的推送集成参数。</Text>
+                      <Form style={{ marginTop: 16 }}>
+                        <Form.Input
+                          field="workflow_push_url"
+                          label="流程推送URL"
+                          placeholder="请输入流程推送URL"
+                        />
+                        <Form.Input
+                          field="workflow_push_key"
+                          label="API Key"
+                          placeholder="请输入API Key"
+                        />
+                        <Form.TextArea
+                          field="workflow_push_mapping"
+                          label="字段映射配置"
+                          placeholder="请输入JSON格式的字段映射配置"
+                          autosize
+                        />
+                      </Form>
+                    </Card>
+                    
+                  </div>
+           </TabPane> 
           {/* 周报管理Tab */}
           <TabPane tab={
             <span>
