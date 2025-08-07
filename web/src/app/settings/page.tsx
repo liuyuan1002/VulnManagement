@@ -30,6 +30,7 @@ import {
 } from '@douyinfe/semi-icons';
 import { systemApi, SystemConfig, ConfigUpdateRequest, weeklyReportApi, resolveImageUrl } from '@/lib/api';
 import { notifyPasswordPolicyUpdated } from '@/utils/password';
+import { notifySystemInfoUpdated } from '@/utils/system';
 
 const { Title, Text } = Typography;
 
@@ -195,6 +196,11 @@ export default function SettingsPage() {
       // 如果更新的是密码策略，通知相关组件刷新
       if (group === 'password') {
         notifyPasswordPolicyUpdated();
+      }
+
+      // 如果更新的是系统配置，通知系统信息刷新
+      if (group === 'system') {
+        notifySystemInfoUpdated();
       }
 
       // 重新加载配置

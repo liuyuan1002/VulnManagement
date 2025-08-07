@@ -14,6 +14,7 @@ import (
 type SchedulerService struct {
 	cron           *cron.Cron
 	weeklyReportService *WeeklyReportService
+	vulnService    *VulnService
 }
 
 // NewSchedulerService 创建定时任务服务实例
@@ -25,6 +26,7 @@ func NewSchedulerService() *SchedulerService {
 	return &SchedulerService{
 		cron:           c,
 		weeklyReportService: &WeeklyReportService{},
+		vulnService:    &VulnService{},
 	}
 }
 
@@ -36,6 +38,13 @@ func (s *SchedulerService) Start() error {
 	_, err := s.cron.AddFunc("0 18 * * 5", s.sendWeeklyReport)
 	if err != nil {
 		return fmt.Errorf("添加周报定时任务失败: %v", err)
+	}
+
+	// 添加漏洞截止时间提醒任务：每天上午8点执行
+	// 0 8 * * * 表示每天08:00执行
+	_, err = s.cron.AddFunc("0 8 * * *", s.sendVulnDeadlineReminders)
+	if err != nil {
+		return fmt.Errorf("添加漏洞截止时间提醒任务失败: %v", err)
 	}
 
 
@@ -78,6 +87,18 @@ func (s *SchedulerService) sendWeeklyReportTest() {
 	}
 }
 
+// sendVulnDeadlineReminders 发送漏洞截止时间提醒的定时任务
+func (s *SchedulerService) sendVulnDeadlineReminders() {
+	log.Println("开始执行漏洞截止时间提醒任务...")
+
+	err := s.vulnService.SendDeadlineReminders()
+	if err != nil {
+		log.Printf("漏洞截止时间提醒发送失败: %v", err)
+	} else {
+		log.Println("漏洞截止时间提醒发送完成")
+	}
+}
+
 // ManualSendWeeklyReport 手动发送周报（用于测试或紧急情况）
 func (s *SchedulerService) ManualSendWeeklyReport() error {
 	log.Println("手动发送周报...")
@@ -87,8 +108,20 @@ func (s *SchedulerService) ManualSendWeeklyReport() error {
 		log.Printf("手动周报发送失败: %v", err)
 		return err
 	}
-	
 	log.Println("手动周报发送成功")
+	return nil
+}
+
+// ManualSendVulnDeadlineReminders 手动发送漏洞截止时间提醒（用于测试或紧急情况）
+func (s *SchedulerService) ManualSendVulnDeadlineReminders() error {
+	log.Println("手动发送漏洞截止时间提醒...")
+
+	err := s.vulnService.SendDeadlineReminders()
+	if err != nil {
+		log.Printf("手动漏洞截止时间提醒发送失败: %v", err)
+		return err
+	}
+	log.Println("手动漏洞截止时间提醒发送成功")
 	return nil
 }
 
@@ -122,6 +155,9 @@ func (s *SchedulerService) GetSchedulerStatus() map[string]interface{} {
 		if i == 0 {
 			taskInfo["name"] = "周报发送"
 			taskInfo["schedule"] = "每周五 18:00"
+		} else if i == 1 {
+			taskInfo["name"] = "漏洞截止时间提醒"
+			taskInfo["schedule"] = "每天 08:00"
 		}
 		
 		status["tasks"] = append(status["tasks"].([]map[string]interface{}), taskInfo)

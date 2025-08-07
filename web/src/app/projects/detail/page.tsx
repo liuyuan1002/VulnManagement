@@ -42,13 +42,13 @@ import {
   IconDownload,
   IconUpload
 } from '@douyinfe/semi-icons';
-import { 
-  projectApi, 
+import {
+  projectApi,
   vulnApi,
   assetApi,
   userApi,
-  authUtils, 
-  Project, 
+  authUtils,
+  Project,
   Vulnerability,
   Asset,
   User,
@@ -75,19 +75,19 @@ const { TabPane } = Tabs;
 export default function ProjectDetailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   // 基础状态
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTabKey, setActiveTabKey] = useState('vulnerabilities');
-  
+
   // 漏洞相关状态
   const [vulnerabilities, setVulnerabilities] = useState<Vulnerability[]>([]);
   const [vulnModalVisible, setVulnModalVisible] = useState(false);
   const [vulnLoading, setVulnLoading] = useState(false);
   const [editingVuln, setEditingVuln] = useState<Vulnerability | null>(null);
   const [vulnFormRef, setVulnFormRef] = useState<any>(null);
-  
+
   // 漏洞详情相关状态
   const [vulnDetailModalVisible, setVulnDetailModalVisible] = useState(false);
   const [viewingVuln, setViewingVuln] = useState<Vulnerability | null>(null);
@@ -131,20 +131,23 @@ export default function ProjectDetailPage() {
   const [importModalVisible, setImportModalVisible] = useState(false);
   const [importing, setImporting] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  
+
   // 用户列表（用于指派）
   const [devEngineers, setDevEngineers] = useState<User[]>([]);
-  
+
   // 当前用户信息状态
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  
+
   // 漏洞描述内容状态（用于Markdown编辑器）
   const [vulnDescription, setVulnDescription] = useState<string>('');
-  
+
   const projectId = searchParams.get('id') as string;
   const isAdmin = currentUser?.role_id === 1;
   const isSecurityEngineer = currentUser?.role_id === 2;
   const isDevEngineer = currentUser?.role_id === 3;
+
+  // 检查是否是项目负责人
+  const isProjectOwner = project && currentUser && (project.owner_id === (currentUser.id || currentUser.ID));
 
   // 项目过期检查
   const isProjectExpired = (project: Project) => {
@@ -155,7 +158,7 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     // 在客户端获取当前用户信息
     setCurrentUser(authUtils.getCurrentUser());
-    
+
     if (projectId) {
       loadProjectDetail();
       loadDevEngineers();
@@ -169,6 +172,21 @@ export default function ProjectDetailPage() {
       loadAssets();
     }
   }, [project, activeTabKey]);
+
+  // 监听弹窗状态变化，控制页面滚动
+  useEffect(() => {
+    return () => {
+      // 组件卸载时恢复页面滚动
+      document.body.style.overflow = 'auto';
+    };
+  }, []);
+
+  // 监听弹窗关闭，恢复页面滚动
+  useEffect(() => {
+    if (!vulnDetailModalVisible) {
+      document.body.style.overflow = 'auto';
+    }
+  }, [vulnDetailModalVisible]);
 
   // 监听 editingVuln 变化，自动填充表单
   useEffect(() => {
@@ -187,13 +205,13 @@ export default function ProjectDetailPage() {
         fix_deadline: editingVuln.fix_deadline ? new Date(editingVuln.fix_deadline) : null,
         tags: editingVuln.tags || '',
       };
-      
-      
+
+
       // 延迟设置表单值，确保表单完全渲染（包括动态显示的状态选择框）
       setTimeout(() => {
         try {
           vulnFormRef.setValues(formValues);
-          
+
           // 对于研发工程师，额外确保状态字段被正确设置
           if (isDevEngineer && editingVuln.status) {
             setTimeout(() => {
@@ -320,12 +338,12 @@ export default function ProjectDetailPage() {
     if (assets.length > 0) {
       return assets;
     }
-    
+
     // 否则尝试使用项目详情中的资产数据
     if (project?.assets && project.assets.length > 0) {
       return project.assets;
     }
-    
+
     // 都没有则返回空数组
     return [];
   };
@@ -337,7 +355,7 @@ export default function ProjectDetailPage() {
     if (vulnFormRef) {
       vulnFormRef.reset();
     }
-    
+
     // 确保资产数据已加载，如果还没有加载就先加载
     const availableAssets = getAvailableAssets();
     if (availableAssets.length === 0) {
@@ -348,7 +366,7 @@ export default function ProjectDetailPage() {
         Toast.warning('资产数据加载失败，您可能无法看到完整的资产列表');
       }
     }
-    
+
     setVulnModalVisible(true);
   };
 
@@ -477,6 +495,8 @@ export default function ProjectDetailPage() {
         await refreshTimeline(vuln.id);
 
         setVulnDetailModalVisible(true);
+        // 禁用页面滚动
+        document.body.style.overflow = 'hidden';
       } else {
         Toast.error('获取漏洞详情失败');
       }
@@ -491,13 +511,33 @@ export default function ProjectDetailPage() {
 
   const handleSaveVuln = async (values: any) => {
     try {
-      
+
       // 验证markdown内容
       if (!vulnDescription.trim()) {
         Toast.error('请输入漏洞详情');
         return;
       }
-      
+
+      // 验证必填字段（创建新漏洞时）
+      if (!editingVuln) {
+        if (!values.vuln_url?.trim()) {
+          Toast.error('请输入漏洞地址');
+          return;
+        }
+        if (!values.fix_suggestion?.trim()) {
+          Toast.error('请输入修复建议');
+          return;
+        }
+        if (!values.assignee_id) {
+          Toast.error('请选择研发工程师');
+          return;
+        }
+        if (!values.fix_deadline) {
+          Toast.error('请选择修复期限');
+          return;
+        }
+      }
+
       const vulnData: VulnCreateRequest | VulnUpdateRequest = {
         title: values.title,
         vuln_url: values.vuln_url,
@@ -532,27 +572,66 @@ export default function ProjectDetailPage() {
       if (editingVuln) {
         await vulnApi.updateVuln(editingVuln.id, vulnData);
       } else {
-        await vulnApi.createVuln({ ...vulnData, project_id: parseInt(projectId) } as VulnCreateRequest);
+        // 创建新漏洞时，确保必填字段不为空
+        if (!vulnData.vuln_url) {
+          Toast.error('漏洞地址不能为空');
+          return;
+        }
+        if (!vulnData.fix_suggestion) {
+          Toast.error('修复建议不能为空');
+          return;
+        }
+        if (!vulnData.assignee_id) {
+          Toast.error('请选择研发工程师');
+          return;
+        }
+        if (!vulnData.fix_deadline) {
+          Toast.error('修复期限不能为空');
+          return;
+        }
+        await vulnApi.createVuln({
+          ...vulnData,
+          project_id: parseInt(projectId),
+          vuln_url: vulnData.vuln_url,
+          fix_suggestion: vulnData.fix_suggestion,
+          assignee_id: vulnData.assignee_id,
+          fix_deadline: vulnData.fix_deadline
+        } as VulnCreateRequest);
       }
 
-      
+
       // 立即关闭弹窗并重置状态
       setVulnModalVisible(false);
       setEditingVuln(null);
-      
+
       // 重置表单
       if (vulnFormRef) {
         vulnFormRef.reset();
       }
-      
+
       // 刷新漏洞列表
       await loadVulnerabilities();
-      
+
+      // 如果当前正在查看这个漏洞的详情，需要刷新详情和时间线
+      if (editingVuln && viewingVuln && viewingVuln.id === editingVuln.id) {
+        try {
+          // 重新获取漏洞详情
+          const response = await vulnApi.getVuln(editingVuln.id);
+          if (response.code === 200 && response.data) {
+            setViewingVuln(response.data);
+            // 刷新时间线
+            await refreshTimeline(editingVuln.id);
+          }
+        } catch (error) {
+          console.error('刷新漏洞详情失败:', error);
+        }
+      }
+
       // 延迟显示Toast消息以避免React 18兼容性问题
       setTimeout(() => {
         Toast.success(editingVuln ? '更新漏洞成功' : '创建漏洞成功');
       }, 100);
-      
+
     } catch (error) {
       console.error('保存漏洞失败:', error);
       // 延迟显示错误Toast
@@ -693,15 +772,15 @@ export default function ProjectDetailPage() {
       if (assetFormRef) {
         assetFormRef.reset();
       }
-      
+
       // 刷新资产列表
       await loadAssets();
-      
+
       // 延迟显示Toast消息以避免React 18兼容性问题
       setTimeout(() => {
         Toast.success(editingAsset ? '更新资产成功' : '创建资产成功');
       }, 100);
-      
+
     } catch (error) {
       console.error('保存资产失败:', error);
       // 延迟显示错误Toast
@@ -878,6 +957,21 @@ export default function ProjectDetailPage() {
     return false;
   };
 
+  // 检查复测权限
+  const canRetestVuln = (vuln: Vulnerability) => {
+    // 管理员可以复测任何漏洞
+    if (isAdmin) return true;
+
+    // 安全工程师可以复测自己提交的漏洞
+    const userId = currentUser?.id || currentUser?.ID;
+    if (isSecurityEngineer && vuln.reporter_id === userId) return true;
+
+    // 项目负责人可以复测项目内的漏洞（包括超级管理员提交的）
+    if (isProjectOwner) return true;
+
+    return false;
+  };
+
   // 检查是否可以重新提交（驳回状态的漏洞）
   const canResubmitVuln = (vuln: Vulnerability) => {
     if (vuln.status !== 'rejected') return false;
@@ -907,10 +1001,10 @@ export default function ProjectDetailPage() {
   const canDeleteVuln = (vuln: Vulnerability) => {
     // 管理员可以删除任何状态的漏洞
     if (isAdmin) return true;
-    
+
     // 已完成的漏洞只有管理员才能删除
     if (vuln.status === 'completed') return false;
-    
+
     const userId = currentUser?.id || currentUser?.ID;
     if (isSecurityEngineer && vuln.reporter_id === userId) return true;
     return false;
@@ -1044,6 +1138,40 @@ export default function ProjectDetailPage() {
       render: (time: string) => new Date(time).toLocaleDateString(),
     },
     {
+      title: '截止时间',
+      dataIndex: 'fix_deadline',
+      key: 'fix_deadline',
+      render: (deadline: string) => {
+        if (!deadline) return '-';
+
+        const deadlineDate = new Date(deadline);
+        const now = new Date();
+        const isOverdue = deadlineDate < now;
+        const daysDiff = Math.ceil((deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+        return (
+          <div>
+            <Text
+              type={isOverdue ? 'danger' : daysDiff <= 3 ? 'warning' : 'secondary'}
+              style={{ fontWeight: isOverdue || daysDiff <= 3 ? 'bold' : 'normal' }}
+            >
+              {deadlineDate.toLocaleDateString()}
+            </Text>
+            {isOverdue && (
+              <div>
+                <Text type="danger" size="small">已逾期 {Math.abs(daysDiff)} 天</Text>
+              </div>
+            )}
+            {!isOverdue && daysDiff <= 3 && daysDiff > 0 && (
+              <div>
+                <Text type="warning" size="small">还有 {daysDiff} 天</Text>
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
       title: '操作',
       key: 'action',
       render: (text: string, record: Vulnerability) => (
@@ -1057,7 +1185,7 @@ export default function ProjectDetailPage() {
           >
             查看详情
           </Button>
-          
+
           {canEditVuln(record) && (
             <Button
               theme="borderless"
@@ -1086,7 +1214,7 @@ export default function ProjectDetailPage() {
               重新提交
             </Button>
           )}
-          
+
           {isSecurityEngineer && record.status === 'ignored' && (
             <Button
               theme="borderless"
@@ -1097,8 +1225,8 @@ export default function ProjectDetailPage() {
               重新激活
             </Button>
           )}
-          
-          {isSecurityEngineer && record.status === 'fixed' && (
+
+          {canRetestVuln(record) && record.status === 'fixed' && (
             <Button
               theme="borderless"
               type="primary"
@@ -1108,7 +1236,7 @@ export default function ProjectDetailPage() {
               复测
             </Button>
           )}
-          
+
           {/* 研发工程师 - 分配给自己的漏洞操作 */}
           {isDevEngineer && record.assignee_id === (currentUser?.ID || currentUser?.id) && (
             <>
@@ -1119,9 +1247,9 @@ export default function ProjectDetailPage() {
                     theme="borderless"
                     type="primary"
                     size="small"
-                    onClick={() => handleUpdateVulnStatus(record.id, 'fixing', { 
+                    onClick={() => handleUpdateVulnStatus(record.id, 'fixing', {
                       fix_started_at: new Date().toISOString(),
-                      fixer_id: currentUser?.ID || currentUser?.id 
+                      fixer_id: currentUser?.ID || currentUser?.id
                     })}
                   >
                     开始修复
@@ -1130,16 +1258,16 @@ export default function ProjectDetailPage() {
                     theme="borderless"
                     type="secondary"
                     size="small"
-                    onClick={() => handleUpdateVulnStatus(record.id, 'fixed', { 
+                    onClick={() => handleUpdateVulnStatus(record.id, 'fixed', {
                       fixed_at: new Date().toISOString(),
-                      fixer_id: currentUser?.ID || currentUser?.id 
+                      fixer_id: currentUser?.ID || currentUser?.id
                     })}
                   >
                     标记已修复
                   </Button>
                 </>
               )}
-              
+
               {/* 修复中状态：可以标记已修复或忽略 */}
               {record.status === 'fixing' && (
                 <>
@@ -1147,9 +1275,9 @@ export default function ProjectDetailPage() {
                     theme="borderless"
                     type="secondary"
                     size="small"
-                    onClick={() => handleUpdateVulnStatus(record.id, 'fixed', { 
+                    onClick={() => handleUpdateVulnStatus(record.id, 'fixed', {
                       fixed_at: new Date().toISOString(),
-                      fixer_id: currentUser?.ID || currentUser?.id 
+                      fixer_id: currentUser?.ID || currentUser?.id
                     })}
                   >
                     标记已修复
@@ -1177,16 +1305,16 @@ export default function ProjectDetailPage() {
               )}
             </>
           )}
-          
-          {/* 安全工程师 - 复测完成操作 */}
-          {isSecurityEngineer && record.status === 'retesting' && (
+
+          {/* 复测完成操作 - 安全工程师和项目负责人 */}
+          {canRetestVuln(record) && record.status === 'retesting' && (
             <>
               <Button
                 theme="borderless"
                 type="secondary"
                 size="small"
-                onClick={() => handleUpdateVulnStatus(record.id, 'completed', { 
-                  completed_at: new Date().toISOString() 
+                onClick={() => handleUpdateVulnStatus(record.id, 'completed', {
+                  completed_at: new Date().toISOString()
                 })}
               >
                 修复完成
@@ -1198,9 +1326,9 @@ export default function ProjectDetailPage() {
                 onClick={() => {
                   const reason = prompt('复测不通过原因：');
                   if (reason) {
-                    handleUpdateVulnStatus(record.id, 'unfixed', { 
+                    handleUpdateVulnStatus(record.id, 'unfixed', {
                       retest_result: reason,
-                      retest_at: new Date().toISOString() 
+                      retest_at: new Date().toISOString()
                     });
                   }
                 }}
@@ -1209,7 +1337,7 @@ export default function ProjectDetailPage() {
               </Button>
             </>
           )}
-          
+
           {canDeleteVuln(record) && (
             <Popconfirm
               title="确认删除"
@@ -1362,15 +1490,15 @@ export default function ProjectDetailPage() {
       {/* 时间线滚动条样式 */}
       <style jsx>{`
         .timeline-container::-webkit-scrollbar {
-          height: 8px;
+          height: 6px;
         }
         .timeline-container::-webkit-scrollbar-track {
           background: #f1f1f1;
-          border-radius: 4px;
+          border-radius: 3px;
         }
         .timeline-container::-webkit-scrollbar-thumb {
           background: #c1c1c1;
-          border-radius: 4px;
+          border-radius: 3px;
         }
         .timeline-container::-webkit-scrollbar-thumb:hover {
           background: #a8a8a8;
@@ -1378,6 +1506,15 @@ export default function ProjectDetailPage() {
         .timeline-container {
           scrollbar-width: thin;
           scrollbar-color: #c1c1c1 #f1f1f1;
+        }
+
+        /* 时间线节点悬浮效果 */
+        .timeline-node {
+          transition: all 0.3s ease;
+        }
+        .timeline-node:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
         }
       `}</style>
 
@@ -1479,19 +1616,19 @@ export default function ProjectDetailPage() {
 
       {/* 标签页 */}
       <Card>
-        <Tabs 
+        <Tabs
           activeKey={activeTabKey}
           onChange={setActiveTabKey}
           type="line"
           size="large"
         >
-          <TabPane 
+          <TabPane
             tab={
               <span>
                 <IconBolt style={{ marginRight: '8px' }} />
                 漏洞管理
               </span>
-            } 
+            }
             itemKey="vulnerabilities"
           >
             <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-end' }}>
@@ -1537,14 +1674,14 @@ export default function ProjectDetailPage() {
               }
             />
           </TabPane>
-          
-          <TabPane 
+
+          <TabPane
             tab={
               <span>
                 <IconServer style={{ marginRight: '8px' }} />
                 资产管理
               </span>
-            } 
+            }
             itemKey="assets"
           >
               <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1656,14 +1793,15 @@ export default function ProjectDetailPage() {
             rules={[{ required: true, message: '请输入漏洞名称' }]}
             disabled={isDevEngineer && !!editingVuln}
           />
-          
+
           <Form.Input
             field="vuln_url"
             label="漏洞地址"
             placeholder="请输入漏洞地址"
+            rules={[{ required: true, message: '请输入漏洞地址' }]}
             disabled={isDevEngineer && !!editingVuln}
           />
-          
+
           {/* 研发工程师编辑时显示状态选择 */}
           {isDevEngineer && editingVuln && (
             <Form.Select
@@ -1678,7 +1816,7 @@ export default function ProjectDetailPage() {
               <Select.Option value="fixed">已修复</Select.Option>
             </Form.Select>
           )}
-          
+
           <Form.Select
             field="asset_id"
             label="所属资产"
@@ -1698,7 +1836,7 @@ export default function ProjectDetailPage() {
               </Select.Option>
             ))}
           </Form.Select>
-          
+
           <Form.Select
             field="severity"
             label="漏洞等级"
@@ -1712,7 +1850,7 @@ export default function ProjectDetailPage() {
               </Select.Option>
             ))}
           </Form.Select>
-          
+
           <Form.Select
             field="vuln_type"
             label="漏洞类型"
@@ -1726,11 +1864,11 @@ export default function ProjectDetailPage() {
               </Select.Option>
             ))}
           </Form.Select>
-          
+
           <div style={{ marginBottom: '16px' }}>
-            <div style={{ 
-              marginBottom: '8px', 
-              fontSize: '14px', 
+            <div style={{
+              marginBottom: '8px',
+              fontSize: '14px',
               fontWeight: '500',
               display: 'flex',
               alignItems: 'center'
@@ -1746,37 +1884,39 @@ export default function ProjectDetailPage() {
               disabled={isDevEngineer && !!editingVuln}
             />
             {!vulnDescription.trim() && (
-              <div style={{ 
-                color: '#f56565', 
-                fontSize: '12px', 
+              <div style={{
+                color: '#f56565',
+                fontSize: '12px',
                 marginTop: '4px',
-                display: 'none' 
-              }} 
+                display: 'none'
+              }}
               id="description-error">
                 请输入漏洞详情
               </div>
             )}
           </div>
-          
+
           <Form.Input
             field="cve_id"
             label="CVE编号"
             placeholder="请输入CVE编号（可选）"
             disabled={isDevEngineer && !!editingVuln}
           />
-          
+
           <Form.TextArea
             field="fix_suggestion"
             label="修复建议"
             placeholder="请输入修复建议"
+            rules={[{ required: true, message: '请输入修复建议' }]}
             autosize={{ minRows: 2, maxRows: 4 }}
             disabled={isDevEngineer && !!editingVuln}
           />
-          
+
           <Form.Select
             field="assignee_id"
             label="指派给"
             placeholder="请选择研发工程师"
+            rules={[{ required: true, message: '请选择研发工程师' }]}
             disabled={isDevEngineer && !!editingVuln}
           >
             {devEngineers.map(engineer => (
@@ -1785,15 +1925,35 @@ export default function ProjectDetailPage() {
               </Select.Option>
             ))}
           </Form.Select>
-          
+
           <Form.DatePicker
             field="fix_deadline"
             label="修复期限"
             placeholder="请选择修复期限"
             type="date"
+            rules={[
+              { required: true, message: '请选择修复期限' },
+              {
+                validator: (rule, value, callback) => {
+                  if (!value) {
+                    callback();
+                    return true;
+                  }
+                  const selectedDate = new Date(value);
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  if (selectedDate < today) {
+                    callback('修复期限不能是过去的日期');
+                    return false;
+                  }
+                  callback();
+                  return true;
+                }
+              }
+            ]}
             disabled={isDevEngineer && !!editingVuln}
           />
-          
+
           <Form.Input
             field="tags"
             label="标签"
@@ -1819,400 +1979,515 @@ export default function ProjectDetailPage() {
         onCancel={() => {
           setVulnDetailModalVisible(false);
           setViewingVuln(null);
+          // 恢复页面滚动
+          document.body.style.overflow = 'auto';
         }}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button onClick={() => setVulnDetailModalVisible(false)}>
+            <Button onClick={() => {
+              setVulnDetailModalVisible(false);
+              setViewingVuln(null);
+              // 恢复页面滚动
+              document.body.style.overflow = 'auto';
+            }}>
               关闭
             </Button>
           </div>
         }
-        width={800}
+        width={1400}
+        height={900}
+        centered={true}
         maskClosable={true}
+        bodyStyle={{
+          padding: '24px',
+          height: '800px',
+          overflow: 'visible'
+        }}
+        style={{
+          top: 0,
+          paddingBottom: 0
+        }}
       >
         {viewingVuln && (
-          <div style={{ lineHeight: '1.6' }}>
-            {/* 基础信息 */}
-            <div style={{ marginBottom: '24px' }}>
-              <Title heading={5} style={{ marginBottom: '16px' }}>基础信息</Title>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <Text type="secondary">漏洞标题：</Text>
-                  <Text strong>{viewingVuln.title}</Text>
+          <div style={{
+            display: 'flex',
+            gap: '32px',
+            minHeight: '800px',
+            lineHeight: '1.6'
+          }}>
+            {/* 左侧：漏洞信息 */}
+            <div style={{
+              flex: '0 0 500px',
+              paddingRight: '32px',
+              borderRight: '2px dashed var(--semi-color-border)',
+              overflowY: 'auto',
+              maxHeight: '800px'
+            }}>
+              {/* 基础信息 */}
+              <div style={{ marginBottom: '24px' }}>
+                <Title heading={5} style={{ marginBottom: '16px', color: 'var(--semi-color-primary)' }}>基础信息</Title>
+
+                {/* 漏洞标题 - 单独一行 */}
+                <div style={{ marginBottom: '16px', padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                  <Text type="secondary" size="small">漏洞标题：</Text>
+                  <div style={{ marginTop: '4px' }}><Text strong style={{ fontSize: '16px' }}>{viewingVuln.title}</Text></div>
                 </div>
-                <div>
-                  <Text type="secondary">漏洞类型：</Text>
-                  <Text>{viewingVuln.vuln_type}</Text>
-                </div>
-                <div>
-                  <Text type="secondary">严重程度：</Text>
-                  <Tag color={getSeverityColor(viewingVuln.severity)}>
-                    {VULN_SEVERITIES.find(s => s.value === viewingVuln.severity)?.label || viewingVuln.severity}
-                  </Tag>
-                </div>
-                <div>
-                  <Text type="secondary">当前状态：</Text>
-                  <Tag color={getStatusColor(viewingVuln.status)}>
-                    {VULN_STATUSES.find(s => s.value === viewingVuln.status)?.label || viewingVuln.status}
-                  </Tag>
-                </div>
-                {viewingVuln.vuln_url && (
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <Text type="secondary">漏洞地址：</Text>
-                    <Text>{viewingVuln.vuln_url}</Text>
+
+                {/* 基础属性 - 两列布局 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                  <div style={{ padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                    <Text type="secondary" size="small">漏洞类型：</Text>
+                    <div style={{ marginTop: '4px' }}><Text strong>{viewingVuln.vuln_type}</Text></div>
                   </div>
-                )}
-                {viewingVuln.cve_id && (
-                  <div>
-                    <Text type="secondary">CVE编号：</Text>
-                    <Text>{viewingVuln.cve_id}</Text>
+                  <div style={{ padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                    <Text type="secondary" size="small">严重程度：</Text>
+                    <div style={{ marginTop: '6px' }}>
+                      <Tag color={getSeverityColor(viewingVuln.severity)} size="large">
+                        {VULN_SEVERITIES.find(s => s.value === viewingVuln.severity)?.label || viewingVuln.severity}
+                      </Tag>
+                    </div>
                   </div>
-                )}
-                {viewingVuln.tags && (
-                  <div>
-                    <Text type="secondary">标签：</Text>
-                    <Text>{viewingVuln.tags}</Text>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 关联信息 */}
-            <div style={{ marginBottom: '24px' }}>
-              <Title heading={5} style={{ marginBottom: '16px' }}>关联信息</Title>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <Text type="secondary">所属项目：</Text>
-                  <Text>{viewingVuln.project?.name || '未知'}</Text>
+                  {viewingVuln.cve_id && (
+                    <div style={{ padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                      <Text type="secondary" size="small">CVE编号：</Text>
+                      <div style={{ marginTop: '4px' }}><Text strong>{viewingVuln.cve_id}</Text></div>
+                    </div>
+                  )}
                 </div>
-                <div>
-                  <Text type="secondary">所属资产：</Text>
-                  <Text>{viewingVuln.asset ? `${viewingVuln.asset.name} (${viewingVuln.asset.ip})` : '未知'}</Text>
-                </div>
-                <div>
-                  <Text type="secondary">提交人：</Text>
-                  <Text>{viewingVuln.reporter?.real_name || '未知'}</Text>
-                </div>
-                <div>
-                  <Text type="secondary">指派人：</Text>
-                  <Text>{viewingVuln.assignee?.real_name || '未指派'}</Text>
-                </div>
-                {viewingVuln.fixer && (
-                  <div>
-                    <Text type="secondary">修复人：</Text>
-                    <Text>{viewingVuln.fixer.real_name}</Text>
+
+                {/* 状态和期限 - 一行两列布局 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                  <div style={{ padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                    <Text type="secondary" size="small">当前状态：</Text>
+                    <div style={{ marginTop: '6px' }}>
+                      <Tag color={getStatusColor(viewingVuln.status)} size="large">
+                        {VULN_STATUSES.find(s => s.value === viewingVuln.status)?.label || viewingVuln.status}
+                      </Tag>
+                    </div>
                   </div>
-                )}
-                {viewingVuln.retester && (
-                  <div>
-                    <Text type="secondary">复测人：</Text>
-                    <Text>{viewingVuln.retester.real_name}</Text>
-                  </div>
-                )}
-              </div>
-            </div>
+                  {viewingVuln.fix_deadline && (
+                    <div style={{ padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                      <Text type="secondary" size="small">修复期限：</Text>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        marginTop: '6px'
+                      }}>
+                        <Text strong style={{
+                          fontSize: '14px',
+                          fontWeight: '600',
+                          color: (() => {
+                            const deadlineDate = new Date(viewingVuln.fix_deadline);
+                            const now = new Date();
+                            const isOverdue = deadlineDate < now;
+                            const daysDiff = Math.ceil((deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-            {/* 处理时间线 */}
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <Title heading={5} style={{ margin: 0 }}>处理时间线</Title>
-                {vulnTimeline.length > 3 && (
-                  <Text type="tertiary" size="small">
-                    拖动查看更多 →
-                  </Text>
-                )}
-              </div>
-              <div style={{
-                padding: '16px',
-                border: '1px solid var(--semi-color-border)',
-                borderRadius: '8px',
-                backgroundColor: 'var(--semi-color-bg-0)'
-              }}>
-                {timelineLoading ? (
-                  <div style={{ textAlign: 'center', padding: '20px' }}>
-                    <Spin />
-                    <Text type="secondary" style={{ marginLeft: '8px' }}>加载时间线...</Text>
-                  </div>
-                ) : vulnTimeline.length > 0 ? (
-                  <div style={{
-                    display: 'flex',
-                    flexDirection: 'row',
-                    alignItems: 'flex-start',
-                    gap: '12px',
-                    position: 'relative',
-                    overflowX: 'auto',
-                    overflowY: 'hidden',
-                    paddingBottom: '8px',
-                    scrollBehavior: 'smooth',
-                    cursor: 'grab',
-                    userSelect: 'none'
-                  }}
-                  onMouseDown={(e) => {
-                    const container = e.currentTarget;
-                    const startX = e.pageX - container.offsetLeft;
-                    const scrollLeft = container.scrollLeft;
+                            if (isOverdue) return '#ff4d4f';
+                            if (daysDiff <= 3) return '#fa8c16';
+                            return '#1890ff';
+                          })(),
+                          padding: '4px 12px',
+                          borderRadius: '4px',
+                          backgroundColor: (() => {
+                            const deadlineDate = new Date(viewingVuln.fix_deadline);
+                            const now = new Date();
+                            const isOverdue = deadlineDate < now;
+                            const daysDiff = Math.ceil((deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-                    const handleMouseMove = (e: MouseEvent) => {
-                      const x = e.pageX - container.offsetLeft;
-                      const walk = (x - startX) * 2; // 调整拖动速度
-                      container.scrollLeft = scrollLeft - walk;
-                      container.style.cursor = 'grabbing';
-                    };
-
-                    const handleMouseUp = () => {
-                      container.style.cursor = 'grab';
-                      document.removeEventListener('mousemove', handleMouseMove);
-                      document.removeEventListener('mouseup', handleMouseUp);
-                    };
-
-                    document.addEventListener('mousemove', handleMouseMove);
-                    document.addEventListener('mouseup', handleMouseUp);
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.cursor = 'grab';
-                  }}
-                  onTouchStart={(e) => {
-                    const container = e.currentTarget;
-                    const touch = e.touches[0];
-                    const startX = touch.pageX;
-                    const scrollLeft = container.scrollLeft;
-
-                    const handleTouchMove = (e: TouchEvent) => {
-                      e.preventDefault();
-                      const touch = e.touches[0];
-                      const x = touch.pageX;
-                      const walk = (startX - x) * 2; // 调整拖动速度
-                      container.scrollLeft = scrollLeft + walk;
-                    };
-
-                    const handleTouchEnd = () => {
-                      document.removeEventListener('touchmove', handleTouchMove);
-                      document.removeEventListener('touchend', handleTouchEnd);
-                    };
-
-                    document.addEventListener('touchmove', handleTouchMove, { passive: false });
-                    document.addEventListener('touchend', handleTouchEnd);
-                  }}
-                  className="timeline-container"
-                  style={{
-                    ...{
-                      display: 'flex',
-                      flexDirection: 'row',
-                      alignItems: 'flex-start',
-                      gap: '12px',
-                      position: 'relative',
-                      overflowX: 'auto',
-                      overflowY: 'hidden',
-                      paddingBottom: '8px',
-                      scrollBehavior: 'smooth',
-                      cursor: 'grab',
-                      userSelect: 'none'
-                    },
-                    // 自定义滚动条样式
-                    WebkitOverflowScrolling: 'touch',
-                  }}>
-                    {vulnTimeline.map((timeline, index) => {
-                      // 根据操作类型设置颜色和标签
-                      const getTimelineStyle = (action: string) => {
-                        switch (action) {
-                          case 'created':
-                            return { color: '#1890ff', label: '创建' };
-                          case 'assigned':
-                            return { color: '#fa8c16', label: '分配' };
-                          case 'unassigned':
-                            return { color: '#8c8c8c', label: '取消分配' };
-                          case 'updated':
-                            return { color: '#52c41a', label: '更新' };
-                          case 'status_changed':
-                            return { color: '#722ed1', label: '状态变更' };
-                          case 'deleted':
-                            return { color: '#ff4d4f', label: '删除' };
-                          default:
-                            return { color: '#8c8c8c', label: action };
-                        }
-                      };
-
-                      const style = getTimelineStyle(timeline.action);
-
-                      return (
-                        <div key={timeline.id} style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          flexShrink: 0  // 防止节点被压缩
+                            if (isOverdue) return 'rgba(255, 77, 79, 0.1)';
+                            if (daysDiff <= 3) return 'rgba(250, 140, 22, 0.1)';
+                            return 'rgba(24, 144, 255, 0.1)';
+                          })(),
                         }}>
-                          {/* 连接线 */}
-                          {index > 0 && (
-                            <div style={{
-                              width: '20px',
-                              height: '2px',
-                              backgroundColor: '#52c41a',
-                              marginLeft: '-8px',
-                              marginRight: '-8px'
-                            }} />
-                          )}
+                          {new Date(viewingVuln.fix_deadline).toLocaleDateString('zh-CN')}
+                        </Text>
+                        {(() => {
+                          const deadlineDate = new Date(viewingVuln.fix_deadline);
+                          const now = new Date();
+                          const isOverdue = deadlineDate < now;
+                          const daysDiff = Math.ceil((deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-                          {/* 时间线节点 */}
-                          <div style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            minWidth: '120px',
-                            padding: '8px',
-                            borderRadius: '6px',
-                            backgroundColor: 'var(--semi-color-success-light-default)',
-                            border: `1px solid var(--semi-color-success)`,
-                            position: 'relative'
-                          }}>
-                            {/* 状态圆点 */}
-                            <div style={{
-                              width: '10px',
-                              height: '10px',
-                              borderRadius: '50%',
-                              backgroundColor: style.color,
-                              marginBottom: '4px'
-                            }} />
+                          if (isOverdue) {
+                            return <Text type="danger" size="small">已逾期</Text>;
+                          } else if (daysDiff <= 3) {
+                            return <Text type="warning" size="small">即将到期</Text>;
+                          } else {
+                            return <Text type="secondary" size="small">{daysDiff}天后</Text>;
+                          }
+                        })()}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
-                            {/* 操作标签 */}
-                            <Text size="small" strong style={{
-                              marginBottom: '2px',
-                              color: 'var(--semi-color-text-0)'
-                            }}>
-                              {style.label}
-                            </Text>
-
-                            {/* 描述信息 */}
-                            <Text size="small" type="secondary" style={{
-                              textAlign: 'center',
-                              lineHeight: '1.2',
-                              marginBottom: '2px',
-                              fontSize: '11px'
-                            }}>
-                              {timeline.description}
-                            </Text>
-
-                            {/* 时间信息 */}
-                            <Text size="small" type="tertiary" style={{
-                              textAlign: 'center',
-                              lineHeight: '1.2',
-                              marginBottom: '2px'
-                            }}>
-                              {new Date(timeline.created_at).toLocaleDateString('zh-CN', {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </Text>
-
-                            {/* 操作人信息 */}
-                            {timeline.user && (
-                              <Text size="small" type="secondary" style={{
-                                textAlign: 'center',
-                                fontSize: '11px'
-                              }}>
-                                {timeline.user.real_name || timeline.user.username}
-                              </Text>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '20px' }}>
-                    <Text type="secondary">暂无时间线记录</Text>
+                {/* 可选信息 */}
+                {viewingVuln.vuln_url && (
+                  <div style={{ marginBottom: '12px', padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                    <Text type="secondary" size="small">漏洞地址：</Text>
+                    <div style={{ marginTop: '4px' }}><Text>{viewingVuln.vuln_url}</Text></div>
                   </div>
                 )}
-              </div>
-            </div>
 
-            {/* 修复期限信息 */}
-            {viewingVuln.fix_deadline && (
-              <div style={{
-                marginBottom: '24px',
-                padding: '12px',
-                border: `1px solid ${new Date(viewingVuln.fix_deadline) < new Date() ? '#ff4d4f' : '#d9d9d9'}`,
-                borderRadius: '8px',
-                backgroundColor: new Date(viewingVuln.fix_deadline) < new Date() ? '#fff2f0' : '#fafafa'
-              }}>
-                <Text type="secondary">修复期限：</Text>
-                <Text style={{
-                  color: new Date(viewingVuln.fix_deadline) < new Date() ? '#ff4d4f' : 'inherit',
-                  marginLeft: '8px'
-                }}>
-                  {new Date(viewingVuln.fix_deadline).toLocaleDateString('zh-CN')}
-                </Text>
-                {new Date(viewingVuln.fix_deadline) < new Date() && (
-                  <Tag color="red" size="small" style={{ marginLeft: '8px' }}>已过期</Tag>
+                {viewingVuln.tags && (
+                  <div style={{ marginBottom: '12px', padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                    <Text type="secondary" size="small">标签：</Text>
+                    <div style={{ marginTop: '4px' }}><Text>{viewingVuln.tags}</Text></div>
+                  </div>
                 )}
+
+
               </div>
-            )}
 
-
-
-            {/* 详细描述 */}
-            {viewingVuln.description && (
+              {/* 关联信息 */}
               <div style={{ marginBottom: '24px' }}>
-                <Title heading={5} style={{ marginBottom: '16px' }}>漏洞详情</Title>
-                <div style={{ 
-                  padding: '16px', 
-                  backgroundColor: '#f8f9fa', 
-                  borderRadius: '6px',
-                  border: '1px solid #e9ecef',
-                }}>
-                  <MarkdownViewer content={viewingVuln.description} />
+                <Title heading={5} style={{ marginBottom: '16px', color: 'var(--semi-color-primary)' }}>关联信息</Title>
+
+                {/* 项目和资产信息 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                  <div style={{ padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                    <Text type="secondary" size="small">所属项目：</Text>
+                    <div style={{ marginTop: '4px' }}><Text strong>{viewingVuln.project?.name || '未知'}</Text></div>
+                  </div>
+                  <div style={{ padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                    <Text type="secondary" size="small">所属资产：</Text>
+                    <div style={{ marginTop: '4px' }}>
+                      <Text strong>{viewingVuln.asset ? `${viewingVuln.asset.name} (${viewingVuln.asset.ip})` : '未知'}</Text>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 人员信息 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                  <div style={{ padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                    <Text type="secondary" size="small">提交人：</Text>
+                    <div style={{ marginTop: '4px' }}><Text strong>{viewingVuln.reporter?.real_name || '未知'}</Text></div>
+                  </div>
+                  <div style={{ padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                    <Text type="secondary" size="small">指派人：</Text>
+                    <div style={{ marginTop: '4px' }}><Text strong>{viewingVuln.assignee?.real_name || '未指派'}</Text></div>
+                  </div>
+                  {viewingVuln.fixer && (
+                    <div style={{ padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                      <Text type="secondary" size="small">修复人：</Text>
+                      <div style={{ marginTop: '4px' }}><Text strong>{viewingVuln.fixer.real_name}</Text></div>
+                    </div>
+                  )}
+                  {viewingVuln.retester && (
+                    <div style={{ padding: '12px', backgroundColor: 'var(--semi-color-fill-0)', borderRadius: '6px' }}>
+                      <Text type="secondary" size="small">复测人：</Text>
+                      <div style={{ marginTop: '4px' }}><Text strong>{viewingVuln.retester.real_name}</Text></div>
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
 
-            {/* 修复建议 */}
-            {viewingVuln.fix_suggestion && (
-              <div style={{ marginBottom: '24px' }}>
-                <Title heading={5} style={{ marginBottom: '16px' }}>修复建议</Title>
-                <div style={{ 
-                  padding: '16px', 
-                  backgroundColor: '#f0f9ff', 
-                  borderRadius: '6px',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word'
-                }}>
-                  <Text>{viewingVuln.fix_suggestion}</Text>
-                </div>
-              </div>
-            )}
-
-            {/* 忽略原因 */}
-            {viewingVuln.ignore_reason && (
-              <div style={{ marginBottom: '24px' }}>
-                <Title heading={5} style={{ marginBottom: '16px' }}>忽略原因</Title>
-                <div style={{ 
-                  padding: '16px', 
-                  backgroundColor: '#fef2f2', 
-                  borderRadius: '6px',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word'
-                }}>
-                  <Text>{viewingVuln.ignore_reason}</Text>
-                </div>
-              </div>
-            )}
-
-            {/* 复测结果 */}
-            {viewingVuln.retest_result && (
+              {/* 处理时间线 */}
               <div>
-                <Title heading={5} style={{ marginBottom: '16px' }}>复测结果</Title>
-                <div style={{ 
-                  padding: '16px', 
-                  backgroundColor: '#f0fdf4', 
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <Title heading={5} style={{ margin: 0, color: 'var(--semi-color-primary)' }}>处理时间线</Title>
+                  {vulnTimeline.length > 2 && (
+                    <Text type="tertiary" size="small">
+                      拖动查看更多 →
+                    </Text>
+                  )}
+                </div>
+                <div style={{
+                  padding: '16px 16px 8px 16px',
+                  border: '1px solid var(--semi-color-border)',
                   borderRadius: '6px',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word'
+                  backgroundColor: 'var(--semi-color-bg-0)',
+                  width: '100%',
+                  maxWidth: '468px',
+                  minHeight: '160px', // 增加最小高度以适应更大的节点
+                  overflow: 'visible'
                 }}>
-                  <Text>{viewingVuln.retest_result}</Text>
+                  {timelineLoading ? (
+                    <div style={{ textAlign: 'center', padding: '20px' }}>
+                      <Spin />
+                      <Text type="secondary" style={{ marginLeft: '8px' }}>加载时间线...</Text>
+                    </div>
+                  ) : vulnTimeline.length > 0 ? (
+                    <div
+                      className="timeline-container"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start', // 改为顶部对齐，避免居中裁剪
+                        gap: '16px',
+                        overflowX: 'auto',
+                        overflowY: 'visible',
+                        padding: '4px 0 20px 0', // 调整内边距，底部留更多空间
+                        scrollBehavior: 'smooth',
+                        cursor: 'grab',
+                        userSelect: 'none',
+                        minHeight: '110px', // 减少最小高度
+                        height: 'auto' // 自动高度
+                      }}
+                      onMouseDown={(e) => {
+                        const container = e.currentTarget;
+                        const startX = e.pageX - container.offsetLeft;
+                        const scrollLeft = container.scrollLeft;
+
+                        const handleMouseMove = (e: MouseEvent) => {
+                          const x = e.pageX - container.offsetLeft;
+                          const walk = (x - startX) * 2;
+                          container.scrollLeft = scrollLeft - walk;
+                          container.style.cursor = 'grabbing';
+                        };
+
+                        const handleMouseUp = () => {
+                          container.style.cursor = 'grab';
+                          document.removeEventListener('mousemove', handleMouseMove);
+                          document.removeEventListener('mouseup', handleMouseUp);
+                        };
+
+                        document.addEventListener('mousemove', handleMouseMove);
+                        document.addEventListener('mouseup', handleMouseUp);
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.cursor = 'grab';
+                      }}
+                    >
+                      {vulnTimeline.map((timeline, index) => {
+                        // 根据操作类型设置颜色和标签
+                        const getTimelineStyle = (action: string) => {
+                          switch (action) {
+                            case 'created':
+                              return { color: '#1890ff', label: '创建' };
+                            case 'assigned':
+                              return { color: '#fa8c16', label: '分配' };
+                            case 'unassigned':
+                              return { color: '#8c8c8c', label: '取消分配' };
+                            case 'updated':
+                              return { color: '#52c41a', label: '更新' };
+                            case 'status_changed':
+                              return { color: '#722ed1', label: '状态变更' };
+                            case 'deleted':
+                              return { color: '#ff4d4f', label: '删除' };
+                            default:
+                              return { color: '#8c8c8c', label: action };
+                          }
+                        };
+
+                        const style = getTimelineStyle(timeline.action);
+
+                        return (
+                          <div key={timeline.id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {/* 连接线 */}
+                            {index > 0 && (
+                              <div style={{
+                                width: '24px',
+                                height: '2px',
+                                backgroundColor: '#d9d9d9',
+                                flexShrink: 0
+                              }} />
+                            )}
+
+                            {/* 时间线节点 */}
+                            <div
+                              className="timeline-node"
+                              style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                minWidth: '120px',
+                                maxWidth: '140px',
+                                padding: '10px 8px 12px 8px',
+                                borderRadius: '8px',
+                                backgroundColor: 'white',
+                                border: `2px solid ${style.color}`,
+                                boxShadow: '0 3px 8px rgba(0,0,0,0.12)',
+                                position: 'relative',
+                                flexShrink: 0,
+                                minHeight: '100px',
+                                overflow: 'visible'
+                              }}
+                            >
+                              {/* 状态圆点 */}
+                              <div style={{
+                                width: '8px',
+                                height: '8px',
+                                borderRadius: '50%',
+                                backgroundColor: style.color,
+                                marginBottom: '3px',
+                                boxShadow: `0 0 0 2px rgba(${parseInt(style.color.slice(1, 3), 16)}, ${parseInt(style.color.slice(3, 5), 16)}, ${parseInt(style.color.slice(5, 7), 16)}, 0.2)`
+                              }} />
+
+                              {/* 操作标签 */}
+                              <Text size="small" strong style={{
+                                marginBottom: '4px',
+                                color: style.color,
+                                textAlign: 'center',
+                                lineHeight: '1.1',
+                                fontSize: '12px',
+                                display: 'block',
+                                fontWeight: '600'
+                              }}>
+                                {style.label}
+                              </Text>
+
+                              {/* 操作描述 */}
+                              {timeline.description && (
+                                <Text size="small" type="secondary" style={{
+                                  textAlign: 'center',
+                                  lineHeight: '1.2',
+                                  fontSize: '10px',
+                                  display: 'block',
+                                  marginBottom: '4px',
+                                  maxWidth: '130px',
+                                  wordBreak: 'break-word',
+                                  whiteSpace: 'normal',
+                                  padding: '2px 4px',
+                                  backgroundColor: 'rgba(0,0,0,0.02)',
+                                  borderRadius: '4px',
+                                  maxHeight: '32px',
+                                  overflow: 'hidden'
+                                }}>
+                                  {timeline.description}
+                                </Text>
+                              )}
+
+                              {/* 时间信息 */}
+                              <div style={{ marginTop: 'auto', paddingTop: '4px' }}>
+                                <Text size="small" type="tertiary" style={{
+                                  textAlign: 'center',
+                                  lineHeight: '1.1',
+                                  marginBottom: '2px',
+                                  fontSize: '10px',
+                                  display: 'block'
+                                }}>
+                                  {new Date(timeline.created_at).toLocaleDateString('zh-CN', {
+                                    month: 'short',
+                                    day: 'numeric'
+                                  })}
+                                </Text>
+                                <Text size="small" type="tertiary" style={{
+                                  textAlign: 'center',
+                                  lineHeight: '1.1',
+                                  fontSize: '9px',
+                                  display: 'block',
+                                  marginBottom: '2px'
+                                }}>
+                                  {new Date(timeline.created_at).toLocaleTimeString('zh-CN', {
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </Text>
+
+                                {/* 操作人信息 */}
+                                {timeline.user && (
+                                  <Text size="small" type="secondary" style={{
+                                    textAlign: 'center',
+                                    fontSize: '9px',
+                                    maxWidth: '130px',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                    display: 'block',
+                                    backgroundColor: 'rgba(0,0,0,0.05)',
+                                    padding: '1px 4px',
+                                    borderRadius: '3px'
+                                  }}>
+                                    {timeline.user.real_name || timeline.user.username}
+                                  </Text>
+                                )}
+                              </div>
+
+
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '20px' }}>
+                      <Text type="secondary">暂无时间线记录</Text>
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
+
+              {/* 左侧底部占位，确保时间线内容不会贴着底部 */}
+              <div style={{ height: '24px' }} />
+            </div>
+            {/* 右侧：漏洞详情 */}
+            <div style={{
+              flex: 1,
+              paddingLeft: '32px',
+              overflowY: 'auto',
+              maxHeight: '800px'
+            }}>
+
+
+
+
+
+              {/* 详细描述 */}
+              {viewingVuln.description && (
+                <div style={{ marginBottom: '24px' }}>
+                  <Title heading={5} style={{ marginBottom: '16px', color: 'var(--semi-color-primary)' }}>漏洞详情</Title>
+                  <div style={{
+                    padding: '16px',
+                    backgroundColor: '#f8f9fa',
+                    borderRadius: '6px',
+                    border: '1px solid #e9ecef',
+                  }}>
+                    <MarkdownViewer content={viewingVuln.description} />
+                  </div>
+                </div>
+              )}
+
+              {/* 修复建议 */}
+              {viewingVuln.fix_suggestion && (
+                <div style={{ marginBottom: '24px' }}>
+                  <Title heading={5} style={{ marginBottom: '16px', color: 'var(--semi-color-primary)' }}>修复建议</Title>
+                  <div style={{
+                    padding: '16px',
+                    backgroundColor: '#f0f9ff',
+                    borderRadius: '6px',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word'
+                  }}>
+                    <Text>{viewingVuln.fix_suggestion}</Text>
+                  </div>
+                </div>
+              )}
+
+              {/* 忽略原因 */}
+              {viewingVuln.ignore_reason && (
+                <div style={{ marginBottom: '24px' }}>
+                  <Title heading={5} style={{ marginBottom: '16px', color: 'var(--semi-color-primary)' }}>忽略原因</Title>
+                  <div style={{
+                    padding: '16px',
+                    backgroundColor: '#fef2f2',
+                    borderRadius: '6px',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word'
+                  }}>
+                    <Text>{viewingVuln.ignore_reason}</Text>
+                  </div>
+                </div>
+              )}
+
+              {/* 复测结果 */}
+              {viewingVuln.retest_result && (
+                <div style={{ marginBottom: '24px' }}>
+                  <Title heading={5} style={{ marginBottom: '16px', color: 'var(--semi-color-primary)' }}>复测结果</Title>
+                  <div style={{
+                    padding: '16px',
+                    backgroundColor: '#f0fdf4',
+                    borderRadius: '6px',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word'
+                  }}>
+                    <Text>{viewingVuln.retest_result}</Text>
+                  </div>
+                </div>
+              )}
+
+              {/* 底部占位，确保内容不会贴着底部 */}
+              <div style={{ height: '24px' }} />
+            </div>
           </div>
         )}
       </Modal>
@@ -2250,7 +2525,7 @@ export default function ProjectDetailPage() {
             placeholder="请输入资产名称"
             rules={[{ required: true, message: '请输入资产名称' }]}
           />
-          
+
           <Form.Select
             field="type"
             label="资产类型"
@@ -2277,27 +2552,27 @@ export default function ProjectDetailPage() {
               ]}
             />
           )}
-          
+
           <Form.Input
             field="domain"
             label="域名"
             placeholder="请输入域名（可选，必须加http或https）"
           />
-          
+
           <Form.Input
             field="ip"
             label="IP地址"
             placeholder="请输入IP地址"
             rules={[{ required: true, message: '请输入IP地址' }]}
           />
-          
+
           <Form.Input
             field="port"
             label="端口"
             placeholder="请输入端口"
             rules={[{ required: true, message: '请输入端口' }]}
           />
-          
+
           <Form.Select
             field="os"
             label="操作系统"
@@ -2309,14 +2584,14 @@ export default function ProjectDetailPage() {
               </Select.Option>
             ))}
           </Form.Select>
-          
+
           <Form.Input
             field="owner"
             label="资产负责人"
             placeholder="请输入资产负责人名字"
             rules={[{ required: true, message: '请输入资产负责人名字' }]}
           />
-          
+
           <Form.Select
             field="environment"
             label="所属环境"
@@ -2329,13 +2604,13 @@ export default function ProjectDetailPage() {
               </Select.Option>
             ))}
           </Form.Select>
-          
+
           <Form.Input
             field="department"
             label="所属部门"
             placeholder="请输入资产所属部门"
           />
-          
+
           <Form.Select
             field="importance"
             label="资产重要性"
@@ -2348,13 +2623,13 @@ export default function ProjectDetailPage() {
               </Select.Option>
             ))}
           </Form.Select>
-          
+
           <Form.Input
             field="tags"
             label="资产标签"
             placeholder="请输入资产标签，用逗号分隔"
           />
-          
+
           <Form.TextArea
             field="description"
             label="资产描述"

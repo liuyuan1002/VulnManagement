@@ -516,6 +516,40 @@ export default function DashboardPage() {
                 dataIndex: 'submitted_at',
                 key: 'submitted_at',
                 render: (time: string) => new Date(time).toLocaleDateString('zh-CN')
+              },
+              {
+                title: '截止时间',
+                dataIndex: 'fix_deadline',
+                key: 'fix_deadline',
+                render: (deadline: string) => {
+                  if (!deadline) return '-';
+
+                  const deadlineDate = new Date(deadline);
+                  const now = new Date();
+                  const isOverdue = deadlineDate < now;
+                  const daysDiff = Math.ceil((deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+                  return (
+                    <div>
+                      <Text
+                        type={isOverdue ? 'danger' : daysDiff <= 3 ? 'warning' : 'secondary'}
+                        style={{ fontWeight: isOverdue || daysDiff <= 3 ? 'bold' : 'normal' }}
+                      >
+                        {deadlineDate.toLocaleDateString('zh-CN')}
+                      </Text>
+                      {isOverdue && (
+                        <div>
+                          <Text type="danger" size="small">已逾期 {Math.abs(daysDiff)} 天</Text>
+                        </div>
+                      )}
+                      {!isOverdue && daysDiff <= 3 && daysDiff > 0 && (
+                        <div>
+                          <Text type="warning" size="small">还有 {daysDiff} 天</Text>
+                        </div>
+                      )}
+                    </div>
+                  );
+                },
               }
             ]}
             dataSource={dashboardData.latest_vulns}
@@ -560,7 +594,7 @@ export default function DashboardPage() {
     const workOverviewData = [
       {
         metric: '当月发现',
-        value: totalVulns,
+        value: userStats.monthly_count,
         color: '#1890ff',
         description: '本月提交的漏洞总数'
       },
@@ -680,7 +714,7 @@ export default function DashboardPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
           <StatCard
             title="当月提交漏洞数"
-            value={userStats.total_count}
+            value={userStats.monthly_count}
             icon={<IconArrowUp style={{ color: 'var(--semi-color-primary)', fontSize: '24px' }} />}
           />
           <StatCard
@@ -837,6 +871,40 @@ export default function DashboardPage() {
                 dataIndex: 'submitted_at',
                 key: 'submitted_at',
                 render: (time: string) => new Date(time).toLocaleDateString('zh-CN')
+              },
+              {
+                title: '截止时间',
+                dataIndex: 'fix_deadline',
+                key: 'fix_deadline',
+                render: (deadline: string) => {
+                  if (!deadline) return '-';
+
+                  const deadlineDate = new Date(deadline);
+                  const now = new Date();
+                  const isOverdue = deadlineDate < now;
+                  const daysDiff = Math.ceil((deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+                  return (
+                    <div>
+                      <Text
+                        type={isOverdue ? 'danger' : daysDiff <= 3 ? 'warning' : 'secondary'}
+                        style={{ fontWeight: isOverdue || daysDiff <= 3 ? 'bold' : 'normal' }}
+                      >
+                        {deadlineDate.toLocaleDateString('zh-CN')}
+                      </Text>
+                      {isOverdue && (
+                        <div>
+                          <Text type="danger" size="small">已逾期 {Math.abs(daysDiff)} 天</Text>
+                        </div>
+                      )}
+                      {!isOverdue && daysDiff <= 3 && daysDiff > 0 && (
+                        <div>
+                          <Text type="warning" size="small">还有 {daysDiff} 天</Text>
+                        </div>
+                      )}
+                    </div>
+                  );
+                },
               }
             ]}
             dataSource={dashboardData.latest_vulns}
@@ -1138,6 +1206,40 @@ export default function DashboardPage() {
                 dataIndex: 'submitted_at',
                 key: 'submitted_at',
                 render: (time: string) => new Date(time).toLocaleDateString('zh-CN')
+              },
+              {
+                title: '截止时间',
+                dataIndex: 'fix_deadline',
+                key: 'fix_deadline',
+                render: (deadline: string) => {
+                  if (!deadline) return '-';
+
+                  const deadlineDate = new Date(deadline);
+                  const now = new Date();
+                  const isOverdue = deadlineDate < now;
+                  const daysDiff = Math.ceil((deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+                  return (
+                    <div>
+                      <Text
+                        type={isOverdue ? 'danger' : daysDiff <= 3 ? 'warning' : 'secondary'}
+                        style={{ fontWeight: isOverdue || daysDiff <= 3 ? 'bold' : 'normal' }}
+                      >
+                        {deadlineDate.toLocaleDateString('zh-CN')}
+                      </Text>
+                      {isOverdue && (
+                        <div>
+                          <Text type="danger" size="small">已逾期 {Math.abs(daysDiff)} 天</Text>
+                        </div>
+                      )}
+                      {!isOverdue && daysDiff <= 3 && daysDiff > 0 && (
+                        <div>
+                          <Text type="warning" size="small">还有 {daysDiff} 天</Text>
+                        </div>
+                      )}
+                    </div>
+                  );
+                },
               }
             ]}
             dataSource={dashboardData.latest_vulns}

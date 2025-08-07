@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { Modal } from '@douyinfe/semi-ui';
-import { IconClose } from '@douyinfe/semi-icons';
+import { Modal, Button } from '@douyinfe/semi-ui';
+import { IconClose, IconChevronLeft, IconChevronRight } from '@douyinfe/semi-icons';
 import { resolveImageUrl } from '@/lib/api';
 
 interface MarkdownViewerProps {
@@ -15,13 +15,76 @@ interface MarkdownViewerProps {
 export default function MarkdownViewer({ content, className, style }: MarkdownViewerProps) {
   const [imageModalVisible, setImageModalVisible] = useState(false);
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string }>({ src: '', alt: '' });
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+
+  // 提取所有图片URL
+  const imageUrls = useMemo(() => {
+    const imgRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+    const images: { src: string; alt: string }[] = [];
+    let match;
+
+    while ((match = imgRegex.exec(content)) !== null) {
+      const alt = match[1] || '';
+      const src = match[2];
+      images.push({ src: resolveImageUrl(src), alt });
+    }
+
+    return images;
+  }, [content]);
 
   // 处理图片点击
   const handleImageClick = (src: string, alt: string) => {
     const resolvedSrc = resolveImageUrl(src);
+    const imageIndex = imageUrls.findIndex(img => img.src === resolvedSrc);
+    setCurrentImageIndex(imageIndex >= 0 ? imageIndex : 0);
     setSelectedImage({ src: resolvedSrc, alt });
     setImageModalVisible(true);
   };
+
+  // 上一张图片
+  const handlePrevImage = () => {
+    if (imageUrls.length > 1) {
+      const prevIndex = currentImageIndex > 0 ? currentImageIndex - 1 : imageUrls.length - 1;
+      setCurrentImageIndex(prevIndex);
+      setSelectedImage(imageUrls[prevIndex]);
+    }
+  };
+
+  // 下一张图片
+  const handleNextImage = () => {
+    if (imageUrls.length > 1) {
+      const nextIndex = currentImageIndex < imageUrls.length - 1 ? currentImageIndex + 1 : 0;
+      setCurrentImageIndex(nextIndex);
+      setSelectedImage(imageUrls[nextIndex]);
+    }
+  };
+
+  // 键盘事件处理
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!imageModalVisible) return;
+
+      switch (event.key) {
+        case 'ArrowLeft':
+          event.preventDefault();
+          handlePrevImage();
+          break;
+        case 'ArrowRight':
+          event.preventDefault();
+          handleNextImage();
+          break;
+        case 'Escape':
+          event.preventDefault();
+          setImageModalVisible(false);
+          break;
+      }
+    };
+
+    if (imageModalVisible) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [imageModalVisible, currentImageIndex, imageUrls.length]);
 
   // 自定义图片渲染组件
   const ImageRenderer = ({ src, alt, ...props }: any) => {
@@ -235,63 +298,183 @@ export default function MarkdownViewer({ content, className, style }: MarkdownVi
         visible={imageModalVisible}
         onCancel={() => setImageModalVisible(false)}
         footer={null}
-        width="auto"
-        style={{ maxWidth: '90vw', maxHeight: '90vh' }}
-        bodyStyle={{ padding: 0 }}
+        width="95vw"
+        height="95vh"
+        centered={true}
+        maskClosable={true}
+        bodyStyle={{
+          padding: 0,
+          height: '95vh',
+          display: 'flex',
+          flexDirection: 'column',
+          background: '#000'
+        }}
         closeIcon={
           <IconClose
             style={{
               position: 'absolute',
-              top: '16px',
-              right: '16px',
-              fontSize: '24px',
+              top: '20px',
+              right: '20px',
+              fontSize: '28px',
               color: '#fff',
-              background: 'rgba(0, 0, 0, 0.5)',
+              background: 'rgba(0, 0, 0, 0.6)',
               borderRadius: '50%',
-              padding: '8px',
+              padding: '10px',
               cursor: 'pointer',
-              zIndex: 1001,
+              zIndex: 1002,
+              transition: 'all 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(0, 0, 0, 0.8)';
+              e.currentTarget.style.transform = 'scale(1.1)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(0, 0, 0, 0.6)';
+              e.currentTarget.style.transform = 'scale(1)';
             }}
           />
         }
       >
         <div
           style={{
+            position: 'relative',
             display: 'flex',
             justifyContent: 'center',
             alignItems: 'center',
             background: '#000',
-            maxHeight: '90vh',
+            height: '100%',
             overflow: 'hidden',
           }}
         >
-          <img
-            src={selectedImage.src}
-            alt={selectedImage.alt}
-            style={{
-              maxWidth: '100%',
-              maxHeight: '90vh',
-              objectFit: 'contain',
-            }}
-          />
-        </div>
-        {selectedImage.alt && (
+          {/* 上一张按钮 */}
+          {imageUrls.length > 1 && (
+            <Button
+              icon={<IconChevronLeft />}
+              onClick={handlePrevImage}
+              style={{
+                position: 'absolute',
+                left: '20px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                zIndex: 1001,
+                background: 'rgba(0, 0, 0, 0.6)',
+                border: 'none',
+                color: '#fff',
+                width: '50px',
+                height: '50px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '24px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(0, 0, 0, 0.8)';
+                e.currentTarget.style.transform = 'translateY(-50%) scale(1.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(0, 0, 0, 0.6)';
+                e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+              }}
+            />
+          )}
+
+          {/* 图片容器 */}
           <div
             style={{
-              position: 'absolute',
-              bottom: '16px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              background: 'rgba(0, 0, 0, 0.7)',
-              color: '#fff',
-              padding: '8px 16px',
-              borderRadius: '4px',
-              fontSize: '14px',
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              width: '100%',
+              height: '100%',
+              padding: '20px',
             }}
           >
-            {selectedImage.alt}
+            <img
+              src={selectedImage.src}
+              alt={selectedImage.alt}
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                objectFit: 'contain',
+                borderRadius: '4px',
+                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.5)',
+              }}
+            />
           </div>
-        )}
+
+          {/* 下一张按钮 */}
+          {imageUrls.length > 1 && (
+            <Button
+              icon={<IconChevronRight />}
+              onClick={handleNextImage}
+              style={{
+                position: 'absolute',
+                right: '20px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                zIndex: 1001,
+                background: 'rgba(0, 0, 0, 0.6)',
+                border: 'none',
+                color: '#fff',
+                width: '50px',
+                height: '50px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '24px',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(0, 0, 0, 0.8)';
+                e.currentTarget.style.transform = 'translateY(-50%) scale(1.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(0, 0, 0, 0.6)';
+                e.currentTarget.style.transform = 'translateY(-50%) scale(1)';
+              }}
+            />
+          )}
+        </div>
+
+        {/* 图片信息栏 */}
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            background: 'linear-gradient(transparent, rgba(0, 0, 0, 0.8))',
+            padding: '20px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            color: '#fff',
+          }}
+        >
+          <div>
+            {selectedImage.alt && (
+              <div style={{ fontSize: '16px', marginBottom: '4px' }}>
+                {selectedImage.alt}
+              </div>
+            )}
+            {imageUrls.length > 1 && (
+              <div style={{ fontSize: '14px', opacity: 0.8 }}>
+                {currentImageIndex + 1} / {imageUrls.length}
+              </div>
+            )}
+          </div>
+
+          {imageUrls.length > 1 && (
+            <div style={{ fontSize: '14px', opacity: 0.8 }}>
+              使用 ← → 键或点击按钮切换图片
+            </div>
+          )}
+        </div>
       </Modal>
     </>
   );

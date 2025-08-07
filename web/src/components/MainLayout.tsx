@@ -8,6 +8,7 @@ import { IconUser, IconExit, IconShield, IconEdit } from '@douyinfe/semi-icons';
 import { authUtils, userApi } from '@/lib/api';
 import PasswordStrengthIndicator from './PasswordStrengthIndicator';
 import type { PasswordValidationResult } from '@/utils/password';
+import { useSystem } from '@/contexts/SystemContext';
 
 interface User {
   id: number;
@@ -42,6 +43,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
     confirm_password: '',
   });
   const [passwordValidation, setPasswordValidation] = useState<PasswordValidationResult | null>(null);
+  const { systemInfo } = useSystem();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -73,6 +75,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
       }
     }
   }, []);
+
+
 
   // 根据当前路径设置选中的菜单项
   useEffect(() => {
@@ -230,15 +234,15 @@ export default function MainLayout({ children }: MainLayoutProps) {
           gap: '10px'
         }}>
           <IconShield size="large" style={{ color: 'var(--semi-color-primary)' }} />
-          <h1 style={{ 
-            margin: 0, 
-            fontSize: '20px', 
+          <h1 style={{
+            margin: 0,
+            fontSize: '20px',
             fontWeight: '300',
             color: 'var(--semi-color-text-0)',
             fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
             letterSpacing: '0.5px'
           }}>
-            VulnMain
+            {systemInfo?.system_name || 'VulnMain'}
           </h1>
         </div>
 
