@@ -29,6 +29,7 @@ func GetPublicSystemInfo(c *gin.Context) {
 
 	// 设置默认值
 	result["system_name"] = "VulnMain"
+	result["system_title"] = "漏洞管理平台"
 	result["company_name"] = "漏洞管理平台"
 	result["version"] = "1.0.0"
 
@@ -37,6 +38,8 @@ func GetPublicSystemInfo(c *gin.Context) {
 		switch config.Key {
 		case "system.name":
 			result["system_name"] = config.Value
+		case "system.title":
+			result["system_title"] = config.Value
 		case "system.company_name":
 			result["company_name"] = config.Value
 		case "system.version":

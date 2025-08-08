@@ -38,11 +38,12 @@ func AutoMigrate() error {
 		&AssetAuditLog{}, // 资产审计日志表，记录资产操作历史
 
 		// 漏洞管理相关表
-		&VulnCategory{},   // 漏洞分类表，定义漏洞类型分类
-		&Vulnerability{},  // 漏洞表，存储漏洞详细信息
-		&VulnAttachment{}, // 漏洞附件表，存储漏洞相关文件
-		&VulnComment{},    // 漏洞评论表，记录漏洞处理过程中的评论
-		&VulnTimeline{},   // 漏洞时间线表，记录漏洞处理的时间节点
+		&VulnCategory{},         // 漏洞分类表，定义漏洞类型分类
+		&Vulnerability{},        // 漏洞表，存储漏洞详细信息
+		&VulnAttachment{},       // 漏洞附件表，存储漏洞相关文件
+		&VulnComment{},          // 漏洞评论表，记录漏洞处理过程中的评论
+		&VulnTimeline{},         // 漏洞时间线表，记录漏洞处理的时间节点
+		&VulnDeadlineReminder{}, // 漏洞截止时间提醒记录表，避免重复发送提醒
 
 		// 系统管理相关表
 		&SystemConfig{}, // 系统配置表，存储系统配置参数
@@ -250,7 +251,6 @@ func InitDefaultData() error {
 		{Key: "system.name", Value: "VulnMain", Type: "string", Group: "system", Description: "系统名称", IsPublic: true},
 		{Key: "system.company_name", Value: "xxxxxx科技有限公司", Type: "string", Group: "system", Description: "公司名称", IsPublic: true},
 		{Key: "system.title", Value: "漏洞管理平台", Type: "string", Group: "system", Description: "系统标题", IsPublic: true},
-		{Key: "system.version", Value: "1.0.0", Type: "string", Group: "system", Description: "系统版本", IsPublic: true},
 
 		// 认证配置
 		{Key: "auth.jwt.secret", Value: secret, Type: "string", Group: "auth", Description: "JWT密钥", IsPublic: false},

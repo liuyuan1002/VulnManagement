@@ -482,6 +482,121 @@ func GetUserRegisteredTemplate(userName, userEmail, initialPassword string) Emai
 	return EmailTemplate{Subject: subject, Body: body}
 }
 
+// GetVulnDeadlineReminderTemplate 漏洞截止时间提醒模板
+func GetVulnDeadlineReminderTemplate(vulnTitle, projectName, assigneeName, severity, status string, daysLeft int, deadline string) EmailTemplate {
+	var subject string
+	var urgencyClass string
+	var urgencyText string
+
+	if daysLeft == 1 {
+		subject = fmt.Sprintf("【紧急】漏洞修复截止时间提醒 - %s", vulnTitle)
+		urgencyClass = "urgent"
+		urgencyText = "紧急提醒"
+	} else if daysLeft == 2 {
+		subject = fmt.Sprintf("【重要】漏洞修复截止时间提醒 - %s", vulnTitle)
+		urgencyClass = "important"
+		urgencyText = "重要提醒"
+	} else {
+		subject = fmt.Sprintf("【提醒】漏洞修复截止时间提醒 - %s", vulnTitle)
+		urgencyClass = "normal"
+		urgencyText = "友情提醒"
+	}
+
+	// 获取严重程度对应的颜色
+	severityColor := "#6c757d" // 默认灰色
+	switch severity {
+	case "critical":
+		severityColor = "#dc3545" // 红色
+	case "high":
+		severityColor = "#fd7e14" // 橙色
+	case "medium":
+		severityColor = "#ffc107" // 黄色
+	case "low":
+		severityColor = "#28a745" // 绿色
+	}
+
+	// 状态显示名称
+	statusMap := map[string]string{
+		"pending":    "待处理",
+		"confirmed":  "已确认",
+		"rejected":   "已拒绝",
+		"unfixed":    "未修复",
+		"fixing":     "修复中",
+		"fixed":      "已修复",
+		"retesting":  "复测中",
+		"completed":  "已完成",
+		"ignored":    "已忽略",
+	}
+	statusDisplay := statusMap[status]
+	if statusDisplay == "" {
+		statusDisplay = status
+	}
+
+	body := fmt.Sprintf(`
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px; }
+        .footer { text-align: center; margin-top: 20px; color: #6c757d; font-size: 12px; }
+        .highlight { color: #007bff; font-weight: bold; }
+        .severity { color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+        .status { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; background: #e9ecef; color: #495057; }
+        .deadline-warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 0;
+            text-align: center;
+        }
+        .deadline-warning.urgent { background: #f8d7da; border-color: #f5c6cb; }
+        .deadline-warning.important { background: #fff3cd; border-color: #ffeaa7; }
+        .deadline-warning.normal { background: #d1ecf1; border-color: #bee5eb; }
+        .deadline-text { font-size: 18px; font-weight: bold; margin: 10px 0; }
+        .deadline-text.urgent { color: #721c24; }
+        .deadline-text.important { color: #856404; }
+        .deadline-text.normal { color: #0c5460; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>%s</h2>
+        </div>
+        <div class="content">
+            <p>您好，%s！</p>
+            <p>您负责的漏洞即将到达修复截止时间，请及时处理：</p>
+
+            <div class="deadline-warning %s">
+                <div class="deadline-text %s">⏰ 距离截止时间还有 %d 天</div>
+                <p><strong>截止时间：</strong>%s</p>
+            </div>
+
+            <p><strong>漏洞标题：</strong><span class="highlight">%s</span></p>
+            <p><strong>所属项目：</strong>%s</p>
+            <p><strong>严重程度：</strong><span class="severity" style="background-color: %s;">%s</span></p>
+            <p><strong>当前状态：</strong><span class="status">%s</span></p>
+
+            <p>请尽快登录系统处理该漏洞，避免超过截止时间。</p>
+            <p>如有疑问或需要延期，请及时联系项目负责人或安全工程师。</p>
+        </div>
+        <div class="footer">
+            <p>此邮件由VulnMain系统自动发送，请勿回复。</p>
+            <p>发送时间：%s</p>
+        </div>
+    </div>
+</body>
+</html>
+	`, urgencyText, assigneeName, urgencyClass, urgencyClass, daysLeft, deadline, vulnTitle, projectName, severityColor, severity, statusDisplay, time.Now().Format("2006-01-02 15:04:05"))
+
+	return EmailTemplate{Subject: subject, Body: body}
+}
+
 // 邮件发送的便捷方法
 
 // SendProjectCreatedNotification 发送项目创建通知
@@ -542,6 +657,16 @@ func SendUserRegisteredNotification(userName, userEmail, initialPassword string)
 
 	template := GetUserRegisteredTemplate(userName, userEmail, initialPassword)
 	return SendEmail([]string{userEmail}, template.Subject, template.Body)
+}
+
+// SendVulnDeadlineReminderNotification 发送漏洞截止时间提醒通知
+func SendVulnDeadlineReminderNotification(vulnTitle, projectName, assigneeName, assigneeEmail, severity, status string, daysLeft int, deadline string) error {
+	if assigneeEmail == "" {
+		return nil // 没有邮箱，不发送通知
+	}
+
+	template := GetVulnDeadlineReminderTemplate(vulnTitle, projectName, assigneeName, severity, status, daysLeft, deadline)
+	return SendEmail([]string{assigneeEmail}, template.Subject, template.Body)
 }
 
 // SendEmailWithAttachment 发送带附件的邮件

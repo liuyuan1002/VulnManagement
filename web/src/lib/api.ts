@@ -102,6 +102,7 @@ export interface LoginResponse {
 
 export interface SystemInfo {
   system_name: string;
+  system_title: string;
   company_name: string;
   logo: string;
   version: string;
@@ -253,7 +254,8 @@ export interface VulnListItem {
 }
 
 export interface UserVulnStats {
-  total_count: number;
+  total_count: number;      // 所有历史漏洞总数
+  monthly_count: number;    // 当月提交漏洞数
   status_stats: Record<string, number>;
   due_soon_count: number;
 }
@@ -903,16 +905,16 @@ export const ASSET_IMPORTANCE_LEVELS = [
 // 漏洞创建请求类型
 export interface VulnCreateRequest {
   title: string;
-  vuln_url?: string;
+  vuln_url: string; // 漏洞地址改为必填
   description: string;
   vuln_type: string;
   severity: string;
   cve_id?: string;
-  fix_suggestion?: string;
+  fix_suggestion: string; // 修复建议改为必填
   project_id: number;
   asset_id: number;
-  assignee_id?: number;
-  fix_deadline?: string;
+  assignee_id: number; // 指派给改为必填
+  fix_deadline: string; // 修复截止时间改为必填
   tags?: string;
 }
 
